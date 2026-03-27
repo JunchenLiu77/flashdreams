@@ -89,7 +89,6 @@ class MultiHeadAttention(nn.Module):
         batch_size = math.prod(batch_shape)
         L, D = context.shape[-2:]
         n, d = self.n_heads, self.head_dim
-        assert n * d == D, "n * d must be equal to D"
 
         k = self.k_norm(self.k_proj(context).reshape(batch_size, L, n, d))
         v = self.v_proj(context).reshape(batch_size, L, n, d)
@@ -178,6 +177,30 @@ class MultiHeadAttention(nn.Module):
 class SelfAttention(MultiHeadAttention):
     """Self-attention: queries and K/V are derived from the same ``x`` each step."""
 
+    def initialize_cache(
+        self,
+        batch_size: int,
+        chunk_size: int,
+        window_size: int,
+        sink_size: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> BlockKVCache:
+        """
+        Initialize the cache for the attention.
+        """
+        total_size = sink_size + window_size
+        return BlockKVCache(
+            k_shape=(batch_size, total_size, self.n_heads, self.head_dim),
+            v_shape=(batch_size, total_size, self.n_heads, self.head_dim),
+            seq_dim=-3,
+            chunk_size=chunk_size,
+            window_size=window_size,
+            sink_size=sink_size,
+            device=device,
+            dtype=dtype,
+        )
+
     def forward(
         self,
         x: Tensor,
@@ -190,6 +213,16 @@ class SelfAttention(MultiHeadAttention):
 
 class CrossAttention(MultiHeadAttention):
     """Cross-attention: K/V live only in ``kv_cache``; ``forward`` does not refresh them."""
+
+    def initialize_cache(
+        self,
+        context: Tensor, # [B, V, L, D]
+    ) -> BlockKVCache:
+        """
+        Initialize the cache for the attention.
+        """
+        cache = self.compute_kv(context)
+        return cache
 
     def forward(
         self,
@@ -304,12 +337,36 @@ class CosmosBlock(nn.Module):
         if self.enable_cross_view_attn:
             self.cross_view_attn.set_context_parallel_group(cp_group=cross_view_attn_group)
 
+    def initialize_cache(
+        self,
+        # self attn
+        chunk_size: int,
+        window_size: int,
+        sink_size: int,
+        # cross attn
+        context: Tensor, # [B, V, L, D]
+    ) -> CosmosBlockCache:
+        """
+        Initialize the cache for the block.
+        """
+        device = context.device
+        dtype = context.dtype
+        batch_size = context.shape[0]
+        num_views = context.shape[1]
+        self_attn_batch_size = batch_size * num_views
+        return CosmosBlockCache(
+            self_attn=self.self_attn.initialize_cache(
+                self_attn_batch_size, chunk_size, window_size, sink_size, device=device, dtype=dtype,
+            ),
+            cross_attn=self.cross_attn.initialize_cache(context),
+        )
+
     def forward(
         self,
         x: Tensor,  # [B, V, T, HW, D]
         emb: Tensor,
         cache: CosmosBlockCache,
-        rope_emb: Tensor,  # [L, 1, 1, D]
+        rope_freqs: Tensor,  # [L, 1, 1, D]
         adaln_lora: Tensor | None = None,
         view_embedding_proj: Tensor | None = None,
     ) -> Tensor:
@@ -320,7 +377,7 @@ class CosmosBlock(nn.Module):
             x: Input tensor [B, V, T, HW, D]
             emb: Time embedding [B, D]
             cache: CosmosBlockCache
-            rope_emb: RoPE cosine and sine embeddings [L, 1, 1, D]
+            rope_freqs: RoPE cosine and sine embeddings [L, 1, 1, D]
             adaln_lora: AdaLN LoRA embeddings [B, 3D]
             view_embedding_proj: View embedding projection [B, V, 9D]
         """
@@ -374,7 +431,7 @@ class CosmosBlock(nn.Module):
         normed_x = self.layer_norm_self_attn(x) * (1 + scale_self) + shift_self
         attn_out = self.self_attn(
             normed_x.reshape(B, V, -1, D),
-            rope_emb=rope_emb,
+            rope_freqs=rope_freqs,
             kv_cache=cache.self_attn,
         ).reshape_as(normed_x)
         x = x + gate_self * attn_out
@@ -733,11 +790,33 @@ class CosmosDiT(nn.Module):
         )
         return x  # [B, V, C, T, H, W]
 
+    def initialize_cache(
+        self,
+        # self attn
+        chunk_size: int,
+        window_size: int,
+        sink_size: int,
+        # cross attn
+        context: Tensor,
+    ) -> CosmosDiTCache:
+        """
+        Initialize the cache for the DiT.
+        """
+        if self.use_crossattn_projection:
+            context = self.crossattn_proj(context)
+
+        return CosmosDiTCache(
+            block_caches=[
+                block.initialize_cache(chunk_size, window_size, sink_size, context)
+                for block in self.blocks
+            ],
+        )
+
     def forward(
         self,
         x: Tensor,
         timesteps: Tensor,
-        rope_emb: Tensor,  # [L, 1, 1, D]
+        rope_freqs: Tensor,  # [L, 1, 1, D]
         cache: CosmosDiTCache,
         condition_video_input_mask: Tensor,
         current_chunk_idx: int = 0,
@@ -751,7 +830,7 @@ class CosmosDiT(nn.Module):
         Args:
             x: Input video tensor [B, V, T, HW, D] after patchify
             timesteps: Timesteps [1] or [B]
-            rope_emb: RoPE cosine and sine embeddings [T*HW, 1, 1, D]
+            rope_freqs: RoPE cosine and sine embeddings [T*HW, 1, 1, D]
             cache: CosmosDiTCache
             condition_video_input_mask: Condition video input mask [B, V, T, HW, D] after patchify
             current_chunk_idx: Current chunk index in autoregressive inference
@@ -796,9 +875,9 @@ class CosmosDiT(nn.Module):
             x = block(
                 x=x,
                 emb=t_emb,
-                rope_emb=rope_emb,
+                rope_freqs=rope_freqs,
                 adaln_lora=adaln_lora,
-                block_kv_cache=cache[block_idx],
+                cache=cache[block_idx],
                 view_embedding_proj=view_embedding_proj,
             )
         if eager_mode:

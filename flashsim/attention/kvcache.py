@@ -91,6 +91,7 @@ class BlockKVCache:
         cache.before_update(0)
         cache.update(k, v)
         cache.after_update(0)
+        cache._curr_chunk_idx = 0
         return cache
 
     def __post_init__(self) -> None:
