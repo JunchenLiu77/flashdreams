@@ -5,7 +5,7 @@ import numpy as np
 import mediapy as media
 from einops import rearrange
 
-from flashsim.pipeline.alpadreams import AlpadreamsPipeline
+from flashsim.pipeline.alpadreams import AlpadreamsPipelineConfig
 
 EXAMPLE_DATA_DIR = os.path.join(
     os.path.dirname(__file__), "../assets/example_data/alpadreams"
@@ -37,7 +37,7 @@ text = [[PROMPT]]  # [B, V]
 print("loaded hdmap_video.shape:", hdmap_video.shape)
 
 # initialize pipeline
-pipeline = AlpadreamsPipeline(dtype=dtype, device=device)
+pipeline = AlpadreamsPipelineConfig().setup()
 cache = pipeline.initialize_cache(text=text, image=first_frame)
 
 # streaming inference

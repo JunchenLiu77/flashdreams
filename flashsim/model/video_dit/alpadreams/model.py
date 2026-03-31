@@ -1,16 +1,16 @@
 from dataclasses import dataclass, field
-from typing import Final, Type
+from typing import Final
 
 import torch
 from torch import Tensor
 
 from flashsim.model.video_dit.base import BaseVideoDiT, denoise, add_noise
+from flashsim.checkpoint.load import load_checkpoint
+from flashsim.configs import InstantiateConfig
 
 from .rope import RotaryPositionEmbedding3D
 from .network import CosmosDiTNetwork, CosmosDiTNetworkCache, CosmosDiTNetworkConfig
 from .flow_match import FlowMatchScheduler
-
-from flashsim.checkpoint.load import load_checkpoint
 
 DEFAULT_CAMERAS: Final[tuple[str, ...]] = (
     "camera_front_wide_120fov",
@@ -72,8 +72,8 @@ class CosmosDiTCache:
 
 
 @dataclass
-class CosmosDiTConfig:
-    _target: Type = field(default_factory=lambda: CosmosDiT)
+class CosmosDiTConfig(InstantiateConfig["CosmosDiT"]):
+    _target: type["CosmosDiT"] = field(default_factory=lambda: CosmosDiT)
 
     # Network configurations
     enable_hdmap_condition: bool = True

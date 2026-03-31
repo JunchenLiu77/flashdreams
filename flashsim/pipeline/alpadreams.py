@@ -1,51 +1,50 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from torch import Tensor
 
-from flashsim.model.video_vae.wan import WanVAEInterface, WanVAECache
-from flashsim.model.text_encoder.cosmos_reason1 import CosmosReason1TextEncoder
+from flashsim.model.video_vae.wan import WanVAEInterfaceConfig, WanVAECache
+from flashsim.model.video_vae.teahv import TeahvInterfaceConfig, TAEHVCache
+from flashsim.model.text_encoder.cosmos_reason1 import CosmosReason1TextEncoderConfig
 from flashsim.model.video_dit.alpadreams.model import (
-    CosmosDiT,
     CosmosDiTCache,
     CosmosDiTCondition,
     CosmosDiTConfig,
 )
+from flashsim.configs import InstantiateConfig
 
 
 @dataclass
 class AlpadreamsPipelineCache:
-    tokenizer_cache: WanVAECache
-    detokenizer_cache: WanVAECache
+    tokenizer_cache: WanVAECache | TAEHVCache
+    detokenizer_cache: WanVAECache | TAEHVCache
     dit_cache: CosmosDiTCache
 
 
-class AlpadreamsPipeline:
-    def __init__(
-        self,
-        dtype: torch.dtype = torch.bfloat16,
-        device: torch.device = torch.device("cuda"),
-    ):
-        self.dtype = dtype
-        self.device = device
-        self.text_encoder = CosmosReason1TextEncoder(device=device)
-        self.detokenizer = self.tokenizer = WanVAEInterface(
-            checkpoint_path="../imaginaire4/data_local/gtc2026_alpamayo_cosmos_cl_demo/Autoencoders/Wan2.1_VAE.safetensors",
-            use_lightvae=False,
-            dtype=dtype,
-            device=device,
-        )
+@dataclass
+class AlpadreamsPipelineConfig(InstantiateConfig["AlpadreamsPipeline"]):
+    _target: type["AlpadreamsPipeline"] = field(
+        default_factory=lambda: AlpadreamsPipeline
+    )
 
-        dit_config = CosmosDiTConfig(
-            len_t=3,
-            window_size_t=6,
-            enable_hdmap_condition=True,
-            encode_with_pixel_shuffle=False,
-            enable_cross_view_attn=False,
-            checkpoint_path="../imaginaire4/data_local/gtc2026_alpamayo_cosmos_cl_demo/checkpoint_cache/32n_cosmos_v2_2b_SF_res720p_30fps_i2v_hdmap_chunk3_vae_encode_loc6_gcp.pt",
-            denoising_timesteps=(1000, 450),
-        )
-        self.dit = CosmosDiT(config=dit_config, dtype=dtype, device=device)
+    tokenizer: WanVAEInterfaceConfig | TeahvInterfaceConfig = field(
+        default_factory=lambda: WanVAEInterfaceConfig()
+    )
+    detokenizer: WanVAEInterfaceConfig | TeahvInterfaceConfig = field(
+        default_factory=lambda: TeahvInterfaceConfig()
+    )
+    text_encoder: CosmosReason1TextEncoderConfig = field(
+        default_factory=lambda: CosmosReason1TextEncoderConfig()
+    )
+    dit: CosmosDiTConfig = field(default_factory=lambda: CosmosDiTConfig())
+
+
+class AlpadreamsPipeline:
+    def __init__(self, config: AlpadreamsPipelineConfig):
+        self.text_encoder = config.text_encoder.setup()
+        self.detokenizer = config.detokenizer.setup()
+        self.tokenizer = config.tokenizer.setup()
+        self.dit = config.dit.setup()
 
     def initialize_cache(
         self, text: list[list[str]], image: Tensor, view_names: list[str] | None = None

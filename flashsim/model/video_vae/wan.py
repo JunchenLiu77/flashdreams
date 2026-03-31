@@ -5,7 +5,7 @@ from torch import Tensor
 
 from flashsim.model.video_vae.impl.wan import WanVAE, WanVAECache
 from flashsim.model.video_vae.base import BaseVideoVAE
-from flashsim.configs.base_config import InstantiateConfig
+from flashsim.configs import InstantiateConfig
 
 
 AVAILABLE_WAN_VAE_CHECKPOINT_PATHS = {

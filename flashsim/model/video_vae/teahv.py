@@ -5,7 +5,7 @@ from torch import Tensor
 
 from flashsim.model.video_vae.impl.teahv import TAEHV, TAEHVCache
 from flashsim.model.video_vae.base import BaseVideoVAE
-from flashsim.configs.base_config import InstantiateConfig
+from flashsim.configs import InstantiateConfig
 
 AVAILABLE_TAEHV_CHECKPOINT_PATHS = {
     "lighttae": "s3://flashsim/assets/checkpoints/autoencoders/lighttaew2_1.pth",

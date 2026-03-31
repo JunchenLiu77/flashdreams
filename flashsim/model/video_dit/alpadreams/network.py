@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.distributed import ProcessGroup
 
 from flashsim.distributed.context_parallel import cat_outputs_cp, split_inputs_cp
-from flashsim.configs.base_config import InstantiateConfig
+from flashsim.configs import InstantiateConfig
 
 from .modules import (
     FinalLayer,
