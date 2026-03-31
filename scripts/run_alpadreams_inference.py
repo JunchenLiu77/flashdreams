@@ -7,7 +7,7 @@ from einops import rearrange
 
 from flashsim.pipeline.alpadreams import AlpadreamsPipeline
 
-EXAMPLE_DATA_DIR = os.path.join(os.path.dirname(__file__), "../assets/example_data")
+EXAMPLE_DATA_DIR = os.path.join(os.path.dirname(__file__), "../assets/example_data/alpadreams")
 HDMAP_VIDEO_PATH = os.path.join(EXAMPLE_DATA_DIR, "camera_front_wide_120fov.mp4")
 FIRST_FRAME_PATH = os.path.join(EXAMPLE_DATA_DIR, "camera_front_wide_120fov.png")
 PROMPT = (

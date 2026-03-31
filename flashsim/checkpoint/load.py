@@ -9,12 +9,12 @@ from safetensors.torch import save_file as save_safetensors
 from torch.distributed.checkpoint import FileSystemReader
 from torch.distributed.checkpoint.default_planner import DefaultLoadPlanner
 
-from flashsim.distributed.s3_filesystem import S3FileSystem, S3StorageReader
+from flashsim.io.s3_filesystem import S3FileSystem, S3StorageReader
 
 
 _ALPADREAMS_CHECKPOINT_CREDENTIAL_PATH = "credentials/s3_checkpoint.secret"
 _ALPADREAMS_CHECKPOINT_LOCAL_CACHE_DIR = os.path.expanduser(
-    os.getenv("IMAGINAIRE_CACHE_DIR", "~/.cache/imaginaire")
+    os.getenv("FLASHSIM_CACHE_DIR", "~/.cache/flashsim")
 )
 
 
