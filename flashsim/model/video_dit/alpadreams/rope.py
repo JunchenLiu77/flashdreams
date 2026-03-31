@@ -13,9 +13,9 @@ except ImportError:
 
 
 def _compute_freqs(
-    dim: int, 
-    extrapolation_ratio: float = 1.0, 
-    device: torch.device = torch.device("cuda")
+    dim: int,
+    extrapolation_ratio: float = 1.0,
+    device: torch.device = torch.device("cuda"),
 ) -> Tensor:
     """Compute base frequencies for one RoPE dimension with NTK extrapolation.
 
@@ -26,7 +26,9 @@ def _compute_freqs(
     Returns:
         Base frequencies of shape ``[dim // 2]``.
     """
-    dim_range = torch.arange(0, dim, 2, dtype=torch.float32, device=device)[: (dim // 2)] / dim
+    dim_range = (
+        torch.arange(0, dim, 2, dtype=torch.float32, device=device)[: (dim // 2)] / dim
+    )
     ntk_factor = extrapolation_ratio ** (dim / (dim - 2))
     theta = 10000.0 * ntk_factor
     freqs = 1.0 / (theta**dim_range)
@@ -56,7 +58,7 @@ class RotaryPositionEmbedding3D:
         h_extrapolation_ratio: float = 1.0,
         w_extrapolation_ratio: float = 1.0,
         t_extrapolation_ratio: float = 1.0,
-        device: torch.device = torch.device("cuda")
+        device: torch.device = torch.device("cuda"),
     ) -> None:
         """Build 3D RoPE for the given sequence lengths and head dimension.
 
@@ -83,9 +85,24 @@ class RotaryPositionEmbedding3D:
         seq_w = torch.arange(len_w, dtype=torch.float32, device=device)
 
         # Align with the patchify pattern (t, h, w).
-        self.freqs_t = repeat(torch.outer(seq_t, self.raw_freqs_t), "t d -> (t h w) 1 1 d", h=len_h, w=len_w)
-        self.freqs_h = repeat(torch.outer(seq_h, self.raw_freqs_h), "h d -> (t h w) 1 1 d", t=len_t, w=len_w)
-        self.freqs_w = repeat(torch.outer(seq_w, self.raw_freqs_w), "w d -> (t h w) 1 1 d", t=len_t, h=len_h)
+        self.freqs_t = repeat(
+            torch.outer(seq_t, self.raw_freqs_t),
+            "t d -> (t h w) 1 1 d",
+            h=len_h,
+            w=len_w,
+        )
+        self.freqs_h = repeat(
+            torch.outer(seq_h, self.raw_freqs_h),
+            "h d -> (t h w) 1 1 d",
+            t=len_t,
+            w=len_w,
+        )
+        self.freqs_w = repeat(
+            torch.outer(seq_w, self.raw_freqs_w),
+            "w d -> (t h w) 1 1 d",
+            t=len_t,
+            h=len_h,
+        )
 
         self.device_mesh: DeviceMesh | None = None
         self.freqs_t_cp: Tensor | None = None
@@ -107,9 +124,15 @@ class RotaryPositionEmbedding3D:
             self.freqs_w_cp = None
         else:
             self.device_mesh = DeviceMesh.from_group(cp_group, device_type="cuda")
-            self.freqs_t_cp = split_inputs_cp(self.freqs_t, seq_dim=0, cp_group=cp_group)
-            self.freqs_h_cp = split_inputs_cp(self.freqs_h, seq_dim=0, cp_group=cp_group)
-            self.freqs_w_cp = split_inputs_cp(self.freqs_w, seq_dim=0, cp_group=cp_group)
+            self.freqs_t_cp = split_inputs_cp(
+                self.freqs_t, seq_dim=0, cp_group=cp_group
+            )
+            self.freqs_h_cp = split_inputs_cp(
+                self.freqs_h, seq_dim=0, cp_group=cp_group
+            )
+            self.freqs_w_cp = split_inputs_cp(
+                self.freqs_w, seq_dim=0, cp_group=cp_group
+            )
 
     def is_context_parallel_enabled(self) -> bool:
         """Return True if context parallelism is active."""

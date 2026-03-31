@@ -2,8 +2,6 @@ from abc import ABC, abstractmethod
 
 from typing import Any
 
-from einops import rearrange
-
 import torch
 from torch import Tensor
 
@@ -26,7 +24,9 @@ def denoise(noisy_input: Tensor, sigma: Tensor, predicted_flow: Tensor) -> Tenso
     return clean_input
 
 
-def add_noise(clean_input: Tensor, sigma: Tensor, rng: torch.Generator | None = None) -> Tensor:
+def add_noise(
+    clean_input: Tensor, sigma: Tensor, rng: torch.Generator | None = None
+) -> Tensor:
     """
     Add noise to the clean input.
 
@@ -46,20 +46,19 @@ def add_noise(clean_input: Tensor, sigma: Tensor, rng: torch.Generator | None = 
 
 
 class BaseVideoDiT[VideoDiTCacheType](ABC):
-
     @abstractmethod
     def initialize_cache(self) -> VideoDiTCacheType:
         """
         Initialize the cache for DIT.
         """
         ...
-    
+
     @abstractmethod
     def generate(
-        self, 
-        condition: Any, 
-        cache: VideoDiTCacheType, 
-        rng: torch.Generator | None = None
+        self,
+        condition: Any,
+        cache: VideoDiTCacheType,
+        rng: torch.Generator | None = None,
     ) -> Tensor:
         """
         Generation entrance for the video DiT.

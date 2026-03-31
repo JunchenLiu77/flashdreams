@@ -11,15 +11,20 @@ from torch.distributed.checkpoint.default_planner import DefaultLoadPlanner
 try:
     from imaginaire.checkpointer.s3_filesystem import S3StorageReader
     from imaginaire.utils.easy_io import easy_io
+
     SUPPORT_S3 = True
 except ImportError:
     SUPPORT_S3 = False
 
 _ALPADREAMS_CHECKPOINT_CREDENTIAL_PATH = "credentials/s3_checkpoint.secret"
-_ALPADREAMS_CHECKPOINT_LOCAL_CACHE_DIR = os.path.expanduser(os.getenv("IMAGINAIRE_CACHE_DIR", "~/.cache/imaginaire"))
+_ALPADREAMS_CHECKPOINT_LOCAL_CACHE_DIR = os.path.expanduser(
+    os.getenv("IMAGINAIRE_CACHE_DIR", "~/.cache/imaginaire")
+)
 
 
-def get_storage_reader(checkpoint_path: str, credential_path: str = _ALPADREAMS_CHECKPOINT_CREDENTIAL_PATH):
+def get_storage_reader(
+    checkpoint_path: str, credential_path: str = _ALPADREAMS_CHECKPOINT_CREDENTIAL_PATH
+):
     """Get storage reader for S3 or local checkpoint.
 
     Args:
@@ -30,9 +35,13 @@ def get_storage_reader(checkpoint_path: str, credential_path: str = _ALPADREAMS_
     """
     if checkpoint_path.startswith("s3://"):
         if SUPPORT_S3:
-            return S3StorageReader(credential_path=credential_path, path=checkpoint_path)
+            return S3StorageReader(
+                credential_path=credential_path, path=checkpoint_path
+            )
         else:
-            raise ValueError("S3 support is not available. Please install imaginaire to use S3 checkpoints.")
+            raise ValueError(
+                "S3 support is not available. Please install imaginaire to use S3 checkpoints."
+            )
     else:
         return FileSystemReader(checkpoint_path)
 
@@ -54,7 +63,9 @@ def load_distributed_checkpoint(
     """
     is_s3_checkpoint = checkpoint_path.startswith("s3://")
     if is_s3_checkpoint and not SUPPORT_S3:
-        raise ValueError("S3 support is not available. Please install imaginaire to use S3 checkpoints.")
+        raise ValueError(
+            "S3 support is not available. Please install imaginaire to use S3 checkpoints."
+        )
 
     # Set the cache checkpoint path so that next time we can just load the .pt file locally.
     local_cache_checkpoint_path = None
@@ -66,10 +77,14 @@ def load_distributed_checkpoint(
 
     # Check if the local cache checkpoint path exists. If so, we load from the local cache.
     # In this case, we don't need to check for success.
-    if local_cache_checkpoint_path is not None and os.path.exists(local_cache_checkpoint_path):
+    if local_cache_checkpoint_path is not None and os.path.exists(
+        local_cache_checkpoint_path
+    ):
         state_dict = torch.load(local_cache_checkpoint_path, map_location="cpu")
         model.load_state_dict(state_dict)
-        logger.info(f"Loaded successfully from the local cache: {local_cache_checkpoint_path}")
+        logger.info(
+            f"Loaded successfully from the local cache: {local_cache_checkpoint_path}"
+        )
         return model
 
     # If check_success is True, we check if the checkpoint is loaded successfully, by
@@ -79,7 +94,9 @@ def load_distributed_checkpoint(
 
     # Load the DCP checkpoint. Note DCP load doesn't fail if there is no matching key.
     # So the best practice is to set check_success to True.
-    storage_reader = get_storage_reader(checkpoint_path, credential_path=credential_path)
+    storage_reader = get_storage_reader(
+        checkpoint_path, credential_path=credential_path
+    )
     state_dict = model.state_dict()
     torch.distributed.checkpoint.load(
         state_dict,
@@ -92,7 +109,9 @@ def load_distributed_checkpoint(
         for k, v in model.state_dict().items():
             prev_v = prev_state_dict[k]
             if (prev_v == v).all():
-                logger.error(f"DCP load seems failed for key {k}. The values are not changed!")
+                logger.error(
+                    f"DCP load seems failed for key {k}. The values are not changed!"
+                )
 
     # Cache the state dict locally if needed..
     if local_cache_checkpoint_path is not None:
@@ -134,19 +153,25 @@ def load_single_checkpoint(
     # Determine file extension
     ext = os.path.splitext(checkpoint_path)[1].lower()
     if ext not in (".pt", ".pth", ".safetensors"):
-        raise ValueError(f"Unsupported checkpoint extension: {ext}. Supported: .pt, .pth, .safetensors")
+        raise ValueError(
+            f"Unsupported checkpoint extension: {ext}. Supported: .pt, .pth, .safetensors"
+        )
 
     # For S3 paths, check local cache first
     local_cache_path = None
     if is_s3_path and local_cache_dir is not None:
-        local_cache_path = os.path.join(local_cache_dir, checkpoint_path.removeprefix("s3://"))
+        local_cache_path = os.path.join(
+            local_cache_dir, checkpoint_path.removeprefix("s3://")
+        )
         if os.path.exists(local_cache_path):
             logger.info(f"Loading from local cache: {local_cache_path}")
             return _load_checkpoint_from_local(local_cache_path, ext, map_location)
 
     # Load from S3 or local
     if is_s3_path:
-        state_dict = _load_checkpoint_from_s3(checkpoint_path, ext, credential_path, map_location)
+        state_dict = _load_checkpoint_from_s3(
+            checkpoint_path, ext, credential_path, map_location
+        )
         # Cache to local
         if local_cache_path is not None:
             os.makedirs(os.path.dirname(local_cache_path), exist_ok=True)
@@ -179,7 +204,9 @@ def _load_checkpoint_from_s3(
 ) -> dict[str, torch.Tensor]:
     """Load checkpoint from S3."""
     if not SUPPORT_S3:
-        raise ValueError("S3 support is not available. Please install imaginaire to use S3 checkpoints.")
+        raise ValueError(
+            "S3 support is not available. Please install imaginaire to use S3 checkpoints."
+        )
 
     logger.info(f"Downloading checkpoint from S3: {s3_path}")
     backend_args = {"s3_credential_path": credential_path}
@@ -188,10 +215,14 @@ def _load_checkpoint_from_s3(
     if ext == ".safetensors":
         return load_safetensors(data_bytes)
     else:
-        return torch.load(io.BytesIO(data_bytes), map_location=map_location, weights_only=False)
+        return torch.load(
+            io.BytesIO(data_bytes), map_location=map_location, weights_only=False
+        )
 
 
-def _save_to_local_cache(state_dict: dict[str, torch.Tensor], path: str, ext: str) -> None:
+def _save_to_local_cache(
+    state_dict: dict[str, torch.Tensor], path: str, ext: str
+) -> None:
     """Save state dict to local cache."""
     from safetensors.torch import save_file as save_safetensors
 
@@ -260,7 +291,9 @@ def load_checkpoint(
 
     elif checkpoint_type == "distributed":
         if model is None:
-            raise ValueError("Model must be provided for distributed checkpoint loading")
+            raise ValueError(
+                "Model must be provided for distributed checkpoint loading"
+            )
         return load_distributed_checkpoint(
             model=model,
             checkpoint_path=checkpoint_path,

@@ -33,7 +33,9 @@ def test_attention():
             world_size=world_size,
             rank=rank,
         )
-        device_mesh = init_device_mesh(device_type="cuda", mesh_shape=(world_size,), mesh_dim_names=("cp",))
+        device_mesh = init_device_mesh(
+            device_type="cuda", mesh_shape=(world_size,), mesh_dim_names=("cp",)
+        )
         rank = torch.distributed.get_rank()
         cp_group = device_mesh.get_group(mesh_dim=0)
 
@@ -47,17 +49,38 @@ def test_attention():
     attn_op2 = RingAttention(qkv_format="bshd", backend="cudnn")
     if world_size > 1:
         attn_op1.set_context_parallel_group(cp_group)
-        assert attn_op1.is_context_parallel_enabled() and attn_op1.context_parallel_size() == world_size
+        assert (
+            attn_op1.is_context_parallel_enabled()
+            and attn_op1.context_parallel_size() == world_size
+        )
         attn_op2.set_context_parallel_group(cp_group)
-        assert attn_op2.is_context_parallel_enabled() and attn_op2.context_parallel_size() == world_size
+        assert (
+            attn_op2.is_context_parallel_enabled()
+            and attn_op2.context_parallel_size() == world_size
+        )
 
     q = torch.randn((batch, qkv_len, nheads, dim), dtype=dtype, device="cuda")
     k = torch.randn((batch, qkv_len, nheads, dim), dtype=dtype, device="cuda")
     v = torch.randn((batch, qkv_len, nheads, dim), dtype=dtype, device="cuda")
     if world_size > 1:
-        q = distribute_tensor(q, device_mesh, [Shard(1)], src_data_rank=None).to_local().contiguous().clone()
-        k = distribute_tensor(k, device_mesh, [Shard(1)], src_data_rank=None).to_local().contiguous().clone()
-        v = distribute_tensor(v, device_mesh, [Shard(1)], src_data_rank=None).to_local().contiguous().clone()
+        q = (
+            distribute_tensor(q, device_mesh, [Shard(1)], src_data_rank=None)
+            .to_local()
+            .contiguous()
+            .clone()
+        )
+        k = (
+            distribute_tensor(k, device_mesh, [Shard(1)], src_data_rank=None)
+            .to_local()
+            .contiguous()
+            .clone()
+        )
+        v = (
+            distribute_tensor(v, device_mesh, [Shard(1)], src_data_rank=None)
+            .to_local()
+            .contiguous()
+            .clone()
+        )
         assert q.shape == (batch, qkv_len // world_size, nheads, dim)
         assert k.shape == (batch, qkv_len // world_size, nheads, dim)
         assert v.shape == (batch, qkv_len // world_size, nheads, dim)

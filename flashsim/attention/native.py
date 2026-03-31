@@ -23,7 +23,9 @@ class NativeAttention(torch.nn.Module):
         """
         super().__init__()
         assert qkv_format in ["bhsd", "bshd"], f"Invalid qkv format: {qkv_format}"
-        assert backend in ["math", "efficient", "cudnn", "flash"], f"Invalid backend: {backend}"
+        assert backend in ["math", "efficient", "cudnn", "flash"], (
+            f"Invalid backend: {backend}"
+        )
         self.qkv_format = qkv_format
         self.backend = backend
         self.device_mesh: DeviceMesh | None = None
@@ -40,7 +42,10 @@ class NativeAttention(torch.nn.Module):
             self.device_mesh = DeviceMesh.from_group(cp_group, device_type="cuda")
 
             # Need to disable load balance for torch context parallel to work.
-            from torch.distributed.tensor.experimental._attention import _cp_options, set_rotate_method
+            from torch.distributed.tensor.experimental._attention import (
+                _cp_options,
+                set_rotate_method,
+            )
 
             _cp_options.enable_load_balance = False
             set_rotate_method("allgather")

@@ -4,7 +4,6 @@ from torch import Tensor
 
 
 class BaseTextEncoder(ABC):
-
     @abstractmethod
     def encode(self, text: list[str]) -> Tensor:
         """

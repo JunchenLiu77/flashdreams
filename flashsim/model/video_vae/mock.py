@@ -4,19 +4,24 @@ import torch
 from torch import Tensor
 from flashsim.model.video_vae.base import BaseVideoVAE
 
+
 @dataclass
 class MockVideoVAEEncoderCache:
     """
     A mock cache for the video VAE encoder.
     """
+
     autoregressive_index: int = -1
+
 
 @dataclass
 class MockVideoVAEDecoderCache:
     """
     A mock cache for the video VAE decoder.
     """
+
     autoregressive_index: int = -1
+
 
 @dataclass
 class MockVideoVAEConfig:
@@ -24,13 +29,13 @@ class MockVideoVAEConfig:
     hidden_channels: int = 16
     out_channels: int = 3
 
-class MockVideoVAE(BaseVideoVAE[MockVideoVAEEncoderCache, MockVideoVAEDecoderCache]):
 
+class MockVideoVAE(BaseVideoVAE[MockVideoVAEEncoderCache, MockVideoVAEDecoderCache]):
     def __init__(
-        self, 
-        config: MockVideoVAEConfig, 
-        dtype: torch.dtype = torch.bfloat16, 
-        device: torch.device = torch.device("cuda")
+        self,
+        config: MockVideoVAEConfig,
+        dtype: torch.dtype = torch.bfloat16,
+        device: torch.device = torch.device("cuda"),
     ):
         super().__init__()
         self.config = config
@@ -40,7 +45,9 @@ class MockVideoVAE(BaseVideoVAE[MockVideoVAEEncoderCache, MockVideoVAEDecoderCac
     def initialize_encode_cache(self) -> MockVideoVAEEncoderCache:
         return MockVideoVAEEncoderCache()
 
-    def encode(self, x: Tensor, cache: MockVideoVAEEncoderCache | None = None) -> Tensor:
+    def encode(
+        self, x: Tensor, cache: MockVideoVAEEncoderCache | None = None
+    ) -> Tensor:
         if cache is None:
             # create a temporary cache
             cache = self.initialize_encode_cache()
@@ -51,7 +58,7 @@ class MockVideoVAE(BaseVideoVAE[MockVideoVAEEncoderCache, MockVideoVAEDecoderCac
         assert autoregressive_index >= 0, "Index must be updated before encoding"
 
         if autoregressive_index == 0:
-            # VAE processes [1, 4, 4, 4, ...] frames. For the first chunk, we 
+            # VAE processes [1, 4, 4, 4, ...] frames. For the first chunk, we
             # pad 3 frames to the left.
             frame = x[..., :, :1, :, :]
             x = torch.cat([frame, frame, frame, x], dim=-3)
@@ -73,7 +80,9 @@ class MockVideoVAE(BaseVideoVAE[MockVideoVAEEncoderCache, MockVideoVAEDecoderCac
     def initialize_decode_cache(self) -> MockVideoVAEDecoderCache:
         return MockVideoVAEDecoderCache()
 
-    def decode(self, z: Tensor, cache: MockVideoVAEDecoderCache | None = None) -> Tensor:
+    def decode(
+        self, z: Tensor, cache: MockVideoVAEDecoderCache | None = None
+    ) -> Tensor:
         if cache is None:
             # create a temporary cache
             cache = self.initialize_decode_cache()
@@ -94,7 +103,7 @@ class MockVideoVAE(BaseVideoVAE[MockVideoVAEEncoderCache, MockVideoVAEDecoderCac
         x = torch.randn(*batch_shape, C, T, H, W, device=z.device, dtype=z.dtype)
 
         if autoregressive_index == 0:
-            # VAE processes [1, 4, 4, 4, ...] frames. For the first chunk, we 
+            # VAE processes [1, 4, 4, 4, ...] frames. For the first chunk, we
             # crop out the first 3 frames.
             x = x[..., :, 3:, :, :]
 

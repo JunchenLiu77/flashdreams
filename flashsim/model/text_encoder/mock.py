@@ -1,27 +1,24 @@
-from dataclasses import dataclass
-
 import torch
 from torch import Tensor
 
 from flashsim.model.text_encoder.base import BaseTextEncoder
 
-@dataclass
-class MockTextEncoderConfig:
-    dim: int = 1024
-    seq_len: int = 256
 
 class MockTextEncoder(BaseTextEncoder):
     """
     A mock text encoder for testing purposes.
     """
+
     def __init__(
-        self, 
-        config: MockTextEncoderConfig, 
-        dtype: torch.dtype = torch.bfloat16, 
-        device: torch.device = torch.device("cuda")
+        self,
+        seq_len: int = 256,
+        embedding_dim: int = 1024,
+        dtype: torch.dtype = torch.bfloat16,
+        device: torch.device | str = torch.device("cuda"),
     ):
         super().__init__()
-        self.config = config
+        self.seq_len = seq_len
+        self.embedding_dim = embedding_dim
         self.dtype = dtype
         self.device = device
 
@@ -33,15 +30,17 @@ class MockTextEncoder(BaseTextEncoder):
             text: The batch of text to encode. [B]
 
         Returns:
-            The encoded tensor. [B, seq_len, dim]
+            The encoded tensor. [B, seq_len, embedding_dim]
         """
-        embeddings = torch.stack([
-            torch.randn(
-                self.config.seq_len, 
-                self.config.dim, 
-                device=self.device, 
-                dtype=self.dtype
-            )
-            for _ in text
-        ])
+        embeddings = torch.stack(
+            [
+                torch.randn(
+                    self.seq_len,
+                    self.embedding_dim,
+                    device=self.device,
+                    dtype=self.dtype,
+                )
+                for _ in text
+            ]
+        )
         return embeddings

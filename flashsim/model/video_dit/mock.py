@@ -7,15 +7,16 @@ from einops import rearrange
 
 from flashsim.model.video_dit.base import BaseVideoDiT, denoise, add_noise
 
+
 class MockRoPEAdapter:
     def __init__(
-        self, 
-        len_t: int, 
-        len_h: int, 
-        len_w: int, 
+        self,
+        len_t: int,
+        len_h: int,
+        len_w: int,
         head_dim: int,
-        dtype: torch.dtype = torch.bfloat16, 
-        device: torch.device = torch.device("cuda")
+        dtype: torch.dtype = torch.bfloat16,
+        device: torch.device = torch.device("cuda"),
     ):
         self.len_t = len_t
         self.len_h = len_h
@@ -26,24 +27,37 @@ class MockRoPEAdapter:
 
     def get_freqs(self, shift_t: int = 0) -> Tensor:
         L = self.len_t * self.len_h * self.len_w
-        return torch.randn(L, 1, 1, self.head_dim // 2, device=self.device, dtype=self.dtype) + shift_t
+        return (
+            torch.randn(
+                L, 1, 1, self.head_dim // 2, device=self.device, dtype=self.dtype
+            )
+            + shift_t
+        )
+
 
 @dataclass
 class MockVideoDiTCondition:
     """
     A mock condition for the video DiT.
     """
-    text: Tensor # text embeddings [B, L, D]
-    image: Tensor # first frame of the video [B, 1, pH, pW, D]
-    hdmap: Tensor | None = None # hdmap of the video [B, pT, pH, pW, D]
+
+    text: Tensor  # text embeddings [B, L, D]
+    image: Tensor  # first frame of the video [B, 1, pH, pW, D]
+    hdmap: Tensor | None = None  # hdmap of the video [B, pT, pH, pW, D]
+
 
 @dataclass
 class MockVideoDiTCache:
     """
     A mock cache for the video DiT.
     """
-    len_h: int # number of tokens along the spatial height dimension after patchification
-    len_w: int # number of tokens along the spatial width dimension after patchification
+
+    len_h: (
+        int  # number of tokens along the spatial height dimension after patchification
+    )
+    len_w: (
+        int  # number of tokens along the spatial width dimension after patchification
+    )
 
     rope_adapter: MockRoPEAdapter
     autoregressive_index: int = -1
@@ -53,17 +67,19 @@ class MockVideoDiTCache:
 class MockVideoDiTConfig:
     head_dim: int = 128
     in_channels: int = 16
-    len_t: int = 4 # number of tokens along the temporal dimension after patchification
+    len_t: int = 4  # number of tokens along the temporal dimension after patchification
+
 
 class MockVideoDiT(BaseVideoDiT[MockVideoDiTCache]):
     """
     A mock video DiT for testing purposes.
     """
+
     def __init__(
-        self, 
-        config: MockVideoDiTConfig, 
-        dtype: torch.dtype = torch.bfloat16, 
-        device: torch.device = torch.device("cuda")
+        self,
+        config: MockVideoDiTConfig,
+        dtype: torch.dtype = torch.bfloat16,
+        device: torch.device = torch.device("cuda"),
     ):
         super().__init__()
         self.config = config
@@ -86,27 +102,23 @@ class MockVideoDiT(BaseVideoDiT[MockVideoDiTCache]):
         len_w = width // self.spatial_patch_size
 
         rope_adapter = MockRoPEAdapter(
-            len_t=self.config.len_t, 
-            len_h=len_h, 
-            len_w=len_w, 
-            head_dim=self.config.head_dim
-        )
-        return MockVideoDiTCache(
+            len_t=self.config.len_t,
             len_h=len_h,
             len_w=len_w,
-            rope_adapter=rope_adapter
+            head_dim=self.config.head_dim,
         )
+        return MockVideoDiTCache(len_h=len_h, len_w=len_w, rope_adapter=rope_adapter)
 
     def timestep_to_sigma(self, timestep: Tensor) -> Tensor:
         return timestep
 
     def _predict_x0(
-        self, 
-        x0: Tensor | None, # clean latent [B, T, H, W, D]
-        timestep: Tensor, # [1] or [B]
-        condition: MockVideoDiTCondition, 
+        self,
+        x0: Tensor | None,  # clean latent [B, T, H, W, D]
+        timestep: Tensor,  # [1] or [B]
+        condition: MockVideoDiTCondition,
         cache: MockVideoDiTCache,
-        rng: torch.Generator | None = None
+        rng: torch.Generator | None = None,
     ) -> Tensor:
         alpha = self.timestep_to_sigma(timestep)
 
@@ -118,11 +130,15 @@ class MockVideoDiT(BaseVideoDiT[MockVideoDiTCache]):
         len_w = cache.len_w
 
         num_tokens_per_chunk = len_t * len_h * len_w
-        freqs = cache.rope_adapter.get_freqs(shift_t=autoregressive_index * num_tokens_per_chunk)
+        _ = cache.rope_adapter.get_freqs(
+            shift_t=autoregressive_index * num_tokens_per_chunk
+        )
 
         batch_size = timestep.shape[0]
         token_dim = (
-            self.config.in_channels * self.temporal_patch_size * self.spatial_patch_size ** 2
+            self.config.in_channels
+            * self.temporal_patch_size
+            * self.spatial_patch_size**2
         )
         input_shape = (batch_size, len_t, len_h, len_w, token_dim)
 
@@ -137,19 +153,21 @@ class MockVideoDiT(BaseVideoDiT[MockVideoDiTCache]):
         # mock predicted flow
         assert noisy_input.shape == input_shape
         predicted_flow = torch.randn_like(noisy_input)
-        
+
         x0 = denoise(noisy_input, alpha, predicted_flow)
         return x0
 
     def generate(
-        self, 
-        condition: MockVideoDiTCondition, 
-        cache: MockVideoDiTCache, 
-        rng: torch.Generator | None = None
+        self,
+        condition: MockVideoDiTCondition,
+        cache: MockVideoDiTCache,
+        rng: torch.Generator | None = None,
     ) -> Tensor:
-        x0 = None # clean latent
+        x0 = None  # clean latent
         for denoising_step in self.denoising_timesteps:
-            timestep = torch.tensor([denoising_step], device=self.device, dtype=self.dtype)
+            timestep = torch.tensor(
+                [denoising_step], device=self.device, dtype=self.dtype
+            )
             x0 = self._predict_x0(x0, timestep, condition, cache, rng=rng)
         return x0
 
@@ -165,7 +183,6 @@ class MockVideoDiT(BaseVideoDiT[MockVideoDiTCache]):
     def denoising_timesteps(self) -> list[int]:
         return [1000, 750, 500, 250]
 
-    
     def patchify(self, x: Tensor) -> Tensor:
         """
         Patchify the input tensor.
@@ -187,7 +204,7 @@ class MockVideoDiT(BaseVideoDiT[MockVideoDiTCache]):
             kw=self.spatial_patch_size,
         )
         return x
-    
+
     def unpatchify(self, x: Tensor) -> Tensor:
         """
         Unpatchify the input tensor.

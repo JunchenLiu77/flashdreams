@@ -3,17 +3,28 @@ from dataclasses import dataclass, field
 import torch
 from torch import Tensor
 
-from flashsim.model.video_vae.mock import MockVideoVAEConfig, MockVideoVAE, MockVideoVAEEncoderCache, MockVideoVAEDecoderCache
+from flashsim.model.video_vae.mock import (
+    MockVideoVAEConfig,
+    MockVideoVAE,
+    MockVideoVAEEncoderCache,
+    MockVideoVAEDecoderCache,
+)
 from flashsim.model.text_encoder.mock import MockTextEncoderConfig, MockTextEncoder
-from flashsim.model.video_dit.mock import MockVideoDiTConfig, MockVideoDiT, MockVideoDiTCache, MockVideoDiTCondition
+from flashsim.model.video_dit.mock import (
+    MockVideoDiTConfig,
+    MockVideoDiT,
+    MockVideoDiTCache,
+    MockVideoDiTCondition,
+)
 
 
 @dataclass
 class MockVideoDiffusionPipelineCache:
     tokenizer_cache: MockVideoVAEEncoderCache
     detokenizer_cache: MockVideoVAEDecoderCache
-    dit_cache: MockVideoDiTCache   
-    dit_condition: MockVideoDiTCondition # re-usable condition for the video DiT
+    dit_cache: MockVideoDiTCache
+    dit_condition: MockVideoDiTCondition  # re-usable condition for the video DiT
+
 
 @dataclass
 class MockVideoDiffusionPipelineConfig:
@@ -22,27 +33,26 @@ class MockVideoDiffusionPipelineConfig:
     detokenizer: MockVideoVAEConfig = field(default_factory=MockVideoVAEConfig)
     dit: MockVideoDiTConfig = field(default_factory=MockVideoDiTConfig)
 
+
 class MockVideoDiffusionPipeline:
     def __init__(
-        self, 
-        config: MockVideoDiffusionPipelineConfig, 
-        dtype: torch.dtype = torch.bfloat16, 
-        device: torch.device = torch.device("cuda")
+        self,
+        config: MockVideoDiffusionPipelineConfig,
+        dtype: torch.dtype = torch.bfloat16,
+        device: torch.device = torch.device("cuda"),
     ):
         self.config = config
         self.dtype = dtype
         self.device = device
-        self.text_encoder = MockTextEncoder(config.text_encoder, dtype=dtype, device=device)
+        self.text_encoder = MockTextEncoder(
+            config.text_encoder, dtype=dtype, device=device
+        )
         self.tokenizer = MockVideoVAE(config.tokenizer, dtype=dtype, device=device)
         self.dit = MockVideoDiT(config.dit, dtype=dtype, device=device)
         self.detokenizer = MockVideoVAE(config.detokenizer, dtype=dtype, device=device)
 
     def initialize_cache(
-        self, 
-        text: list[str],
-        image: Tensor,
-        video_height: int, 
-        video_width: int
+        self, text: list[str], image: Tensor, video_height: int, video_width: int
     ):
         """
         Initialize the cache for the video diffusion pipeline.
@@ -60,7 +70,9 @@ class MockVideoDiffusionPipeline:
         encoded_image = self.dit.patchify(encoded_image)
         encoded_text = self.text_encoder.encode(text)
         dit_condition = MockVideoDiTCondition(text=encoded_text, image=encoded_image)
-        dit_cache = self.dit.initialize_cache(height=encoded_height, width=encoded_width)
+        dit_cache = self.dit.initialize_cache(
+            height=encoded_height, width=encoded_width
+        )
 
         tokenizer_cache = self.tokenizer.initialize_encode_cache()
         detokenizer_cache = self.detokenizer.initialize_decode_cache()
@@ -72,7 +84,12 @@ class MockVideoDiffusionPipeline:
             dit_condition=dit_condition,
         )
 
-    def streaming_inference(self, autoregressive_index: int, hdmap: Tensor, cache: MockVideoDiffusionPipelineCache):
+    def streaming_inference(
+        self,
+        autoregressive_index: int,
+        hdmap: Tensor,
+        cache: MockVideoDiffusionPipelineCache,
+    ):
         """
         Stream the inference of the video diffusion pipeline.
 
@@ -101,6 +118,7 @@ class MockVideoDiffusionPipeline:
         decoded_video = self.detokenizer.decode(clean_input, cache=detokenizer_cache)
         return decoded_video
 
+
 # python -m flashsim.pipeline.mock
 if __name__ == "__main__":
     height = 480
@@ -109,10 +127,10 @@ if __name__ == "__main__":
     config = MockVideoDiffusionPipelineConfig()
     pipeline = MockVideoDiffusionPipeline(config)
     cache = pipeline.initialize_cache(
-        text=["Hello, world!"], 
-        image=torch.randn(1, 3, 1, height, width), 
-        video_height=height, 
-        video_width=width
+        text=["Hello, world!"],
+        image=torch.randn(1, 3, 1, height, width),
+        video_height=height,
+        video_width=width,
     )
 
     hdmap = torch.randn(1, 3, 13, height, width)

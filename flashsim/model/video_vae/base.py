@@ -4,7 +4,6 @@ from torch import Tensor
 
 
 class BaseVideoVAE[EncoderCacheType, DecoderCacheType](ABC):
-
     @abstractmethod
     def initialize_encode_cache(self) -> EncoderCacheType:
         """

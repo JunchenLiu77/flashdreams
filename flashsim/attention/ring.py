@@ -7,6 +7,7 @@ from torch.distributed.tensor.device_mesh import DeviceMesh
 
 from .native import NativeAttention
 
+
 def torch_sdpa_cudnn(
     query: Tensor, key: Tensor, value: Tensor, return_lse: bool = False
 ) -> tuple[Tensor, Tensor] | Tensor:
@@ -126,7 +127,9 @@ class RingAttention(NativeAttention):
                 lse = lse.to(torch.float32)
 
             if prev_out is not None:
-                out = prev_out - torch.nn.functional.sigmoid(lse - prev_lse) * (prev_out - out)
+                out = prev_out - torch.nn.functional.sigmoid(lse - prev_lse) * (
+                    prev_out - out
+                )
                 lse = prev_lse - torch.nn.functional.logsigmoid(prev_lse - lse)
             prev_out = out
             prev_lse = lse
