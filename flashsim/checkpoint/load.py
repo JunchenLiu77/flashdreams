@@ -5,16 +5,12 @@ from typing import Literal
 from loguru import logger
 import torch
 from safetensors.torch import load as load_safetensors
+from safetensors.torch import save_file as save_safetensors
 from torch.distributed.checkpoint import FileSystemReader
 from torch.distributed.checkpoint.default_planner import DefaultLoadPlanner
 
-try:
-    from imaginaire.checkpointer.s3_filesystem import S3StorageReader
-    from imaginaire.utils.easy_io import easy_io
+from flashsim.distributed.s3_filesystem import S3FileSystem, S3StorageReader
 
-    SUPPORT_S3 = True
-except ImportError:
-    SUPPORT_S3 = False
 
 _ALPADREAMS_CHECKPOINT_CREDENTIAL_PATH = "credentials/s3_checkpoint.secret"
 _ALPADREAMS_CHECKPOINT_LOCAL_CACHE_DIR = os.path.expanduser(
@@ -34,14 +30,7 @@ def get_storage_reader(
         The storage reader.
     """
     if checkpoint_path.startswith("s3://"):
-        if SUPPORT_S3:
-            return S3StorageReader(
-                credential_path=credential_path, path=checkpoint_path
-            )
-        else:
-            raise ValueError(
-                "S3 support is not available. Please install imaginaire to use S3 checkpoints."
-            )
+        return S3StorageReader(credential_path=credential_path, path=checkpoint_path)
     else:
         return FileSystemReader(checkpoint_path)
 
@@ -62,10 +51,6 @@ def load_distributed_checkpoint(
             by comparing the state dict of the model before and after loading the checkpoint.
     """
     is_s3_checkpoint = checkpoint_path.startswith("s3://")
-    if is_s3_checkpoint and not SUPPORT_S3:
-        raise ValueError(
-            "S3 support is not available. Please install imaginaire to use S3 checkpoints."
-        )
 
     # Set the cache checkpoint path so that next time we can just load the .pt file locally.
     local_cache_checkpoint_path = None
@@ -203,14 +188,10 @@ def _load_checkpoint_from_s3(
     map_location: str | torch.device = "cpu",
 ) -> dict[str, torch.Tensor]:
     """Load checkpoint from S3."""
-    if not SUPPORT_S3:
-        raise ValueError(
-            "S3 support is not available. Please install imaginaire to use S3 checkpoints."
-        )
-
     logger.info(f"Downloading checkpoint from S3: {s3_path}")
-    backend_args = {"s3_credential_path": credential_path}
-    data_bytes = easy_io.get(s3_path, backend_args=backend_args)
+    s3_fs = S3FileSystem(credential_path=credential_path)
+    with s3_fs.create_stream(s3_path, "rb") as stream:
+        data_bytes = stream.read()
 
     if ext == ".safetensors":
         return load_safetensors(data_bytes)
@@ -224,8 +205,6 @@ def _save_to_local_cache(
     state_dict: dict[str, torch.Tensor], path: str, ext: str
 ) -> None:
     """Save state dict to local cache."""
-    from safetensors.torch import save_file as save_safetensors
-
     if ext == ".safetensors":
         save_safetensors(state_dict, path)
     else:
