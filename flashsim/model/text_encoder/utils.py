@@ -2,6 +2,7 @@ import ftfy
 import html
 import re
 
+
 def basic_clean(text: str) -> str:
     """
     Clean text by fixing encoding issues and unescaping HTML entities.
