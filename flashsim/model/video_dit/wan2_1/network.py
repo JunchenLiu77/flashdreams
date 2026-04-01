@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -8,6 +8,8 @@ from torch import Tensor
 from torch.distributed import ProcessGroup
 
 from flashsim.distributed.context_parallel import cat_outputs_cp, split_inputs_cp
+from flashsim.configs import InstantiateConfig
+
 from flashsim.model.video_dit.wan2_1.modules import (
     BlockCache,
     Block,
@@ -38,27 +40,31 @@ class WanDiTNetworkCache:
             block_cache.after_update(chunk_idx)
 
 
+@dataclass
+class WanDiTNetworkConfig(InstantiateConfig["WanDiTNetwork"]):
+    _target: type["WanDiTNetwork"] = field(default_factory=lambda: WanDiTNetwork)
+
+    model_type: Literal["t2v", "i2v"] = "t2v"
+    patch_size: tuple[int, int, int] = (1, 2, 2)
+    text_len: int = 512
+    in_dim: int = 16
+    dim: int = 2048
+    ffn_dim: int = 8192
+    freq_dim: int = 256
+    text_dim: int = 4096
+    out_dim: int = 16
+    num_heads: int = 16
+    num_layers: int = 32
+    cross_attn_norm: bool = True
+    eps: float = 1e-6
+    concat_padding_mask: bool = False
+    additional_concat_ch: int = 0
+
+
 class WanDiTNetwork(nn.Module):
     """WAN diffusion backbone for text-to-video and image-to-video."""
 
-    def __init__(
-        self,
-        model_type: str = "t2v",
-        patch_size: tuple[int, int, int] = (1, 2, 2),
-        text_len: int = 512,
-        in_dim: int = 16,
-        dim: int = 2048,
-        ffn_dim: int = 8192,
-        freq_dim: int = 256,
-        text_dim: int = 4096,
-        out_dim: int = 16,
-        num_heads: int = 16,
-        num_layers: int = 32,
-        cross_attn_norm: bool = True,
-        eps: float = 1e-6,
-        concat_padding_mask: bool = False,
-        additional_concat_ch: int = 0,
-    ) -> None:
+    def __init__(self, config: WanDiTNetworkConfig):
         """Initialize WAN DiT backbone.
 
         Args:
@@ -81,61 +87,68 @@ class WanDiTNetwork(nn.Module):
 
         super().__init__()
 
-        assert model_type in ["t2v", "i2v"], "model_type must be 't2v' or 'i2v'"
-        self.model_type = model_type
+        assert config.model_type in ["t2v", "i2v"], "model_type must be 't2v' or 'i2v'"
+        self.model_type = config.model_type
 
-        self.patch_size = patch_size
-        self.text_len = text_len
-        self.in_dim = in_dim
-        self.dim = dim
-        self.ffn_dim = ffn_dim
-        self.freq_dim = freq_dim
-        self.text_dim = text_dim
-        self.out_dim = out_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.cross_attn_norm = cross_attn_norm
-        self.eps = eps
-        self.concat_padding_mask = concat_padding_mask
-        self.additional_concat_ch = additional_concat_ch
+        self.patch_size = config.patch_size
+        self.text_len = config.text_len
+        self.dim = config.dim
+        self.ffn_dim = config.ffn_dim
+        self.freq_dim = config.freq_dim
+        self.text_dim = config.text_dim
+        self.out_dim = config.out_dim
+        self.num_heads = config.num_heads
+        self.num_layers = config.num_layers
+        self.cross_attn_norm = config.cross_attn_norm
+        self.eps = config.eps
+        self.concat_padding_mask = config.concat_padding_mask
+        self.additional_concat_ch = config.additional_concat_ch
 
         # Embedding layers
-        in_dim = in_dim + 1 if self.concat_padding_mask else in_dim
+        in_dim = config.in_dim + 1 if self.concat_padding_mask else config.in_dim
         self.patch_embedding = nn.Linear(
-            in_dim * patch_size[0] * patch_size[1] * patch_size[2], dim
+            in_dim * self.patch_size[0] * self.patch_size[1] * self.patch_size[2],
+            self.dim,
         )
         self.text_embedding = nn.Sequential(
-            nn.Linear(text_dim, dim), nn.GELU(approximate="tanh"), nn.Linear(dim, dim)
+            nn.Linear(self.text_dim, self.dim),
+            nn.GELU(approximate="tanh"),
+            nn.Linear(self.dim, self.dim),
         )
         self.time_embedding = nn.Sequential(
-            nn.Linear(freq_dim, dim), nn.SiLU(), nn.Linear(dim, dim)
+            nn.Linear(self.freq_dim, self.dim), nn.SiLU(), nn.Linear(self.dim, self.dim)
         )
-        self.time_projection = nn.Sequential(nn.SiLU(), nn.Linear(dim, dim * 6))
-        if model_type == "i2v":
-            self.img_emb = MLPProj(1280, dim)
-        if additional_concat_ch > 0:
+        self.time_projection = nn.Sequential(
+            nn.SiLU(), nn.Linear(self.dim, self.dim * 6)
+        )
+        if self.model_type == "i2v":
+            self.img_emb = MLPProj(1280, self.dim)
+        if self.additional_concat_ch > 0:
             self.additional_patch_embedding = nn.Linear(
-                additional_concat_ch * patch_size[0] * patch_size[1] * patch_size[2],
-                dim,
+                self.additional_concat_ch
+                * self.patch_size[0]
+                * self.patch_size[1]
+                * self.patch_size[2],
+                self.dim,
             )
 
         # Transformer blocks
         self.blocks = nn.ModuleList(
             [
                 Block(
-                    dim,
-                    ffn_dim,
-                    num_heads,
-                    cross_attn_norm,
-                    eps,
-                    i2v=(model_type == "i2v"),
+                    self.dim,
+                    self.ffn_dim,
+                    self.num_heads,
+                    self.cross_attn_norm,
+                    self.eps,
+                    i2v=(self.model_type == "i2v"),
                 )
-                for _ in range(num_layers)
+                for _ in range(self.num_layers)
             ]
         )
 
         # Final projection head
-        self.head = Head(dim, out_dim, patch_size, eps)
+        self.head = Head(self.dim, self.out_dim, self.patch_size, self.eps)
 
         self._is_shuffle_op_fused = False
         self._parameters_updated_after_loading_checkpoint = False
@@ -234,7 +247,7 @@ class WanDiTNetwork(nn.Module):
         window_size: int,
         sink_size: int,
         text_embeddings: Tensor,
-        img_embeddings: Optional[Tensor] = None,
+        img_embeddings: Tensor | None = None,
     ) -> WanDiTNetworkCache:
         """Initialize block caches from text/image context embeddings.
 
@@ -410,18 +423,22 @@ def test_basic(i2v: bool = False, use_hdmap: bool = False) -> None:
     num_tokens_per_frame = H // 2 * W // 2
     num_tokens_per_chunk = T * num_tokens_per_frame
 
-    network = WanDiTNetwork(
-        model_type=model_type,
-        dim=5120,
-        ffn_dim=13824,
-        freq_dim=256,
-        in_dim=in_dim,
-        num_heads=40,
-        num_layers=40,
-        out_dim=16,
-        text_len=512,
-        additional_concat_ch=additional_concat_ch,
-    ).to(device=device, dtype=dtype)
+    network = (
+        WanDiTNetworkConfig(
+            model_type=model_type,
+            dim=5120,
+            ffn_dim=13824,
+            freq_dim=256,
+            in_dim=in_dim,
+            num_heads=40,
+            num_layers=40,
+            out_dim=16,
+            text_len=512,
+            additional_concat_ch=additional_concat_ch,
+        )
+        .setup()
+        .to(device=device, dtype=dtype)
+    )
     # torch.save(network.state_dict(), "outputs/wan2_1_network.pth")
     network.load_state_dict(torch.load("outputs/wan2_1_network.pth"))
 

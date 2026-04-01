@@ -12,14 +12,12 @@ from flashsim.model.text_encoder.utils import prompt_clean, str2bool
 
 @dataclass
 class WanTextEncoderConfig(InstantiateConfig["WanTextEncoder"]):
-    _target: type["WanTextEncoder"] = field(
-        default_factory=lambda: WanTextEncoder
-    )
+    _target: type["WanTextEncoder"] = field(default_factory=lambda: WanTextEncoder)
 
     model_id_or_local_path: Literal[
-        "Wan-AI/Wan2.1-T2V-14B-Diffusers", 
-        "Wan-AI/Wan2.1-T2V-1.3B-Diffusers", 
-        "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+        "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+        "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+        "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
     ] = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
     device: torch.device = torch.device("cuda")
     dtype: torch.dtype = torch.bfloat16
@@ -62,12 +60,17 @@ class WanTextEncoder(BaseTextEncoder):
         seq_lens = mask.gt(0).sum(dim=1).long()
 
         prompt_embeds = self.text_encoder(
-            text_input_ids.to(self.text_encoder.device), mask.to(self.text_encoder.device)
+            text_input_ids.to(self.text_encoder.device),
+            mask.to(self.text_encoder.device),
         ).last_hidden_state
         prompt_embeds = prompt_embeds.to(self.text_encoder.device)
         prompt_embeds = [u[:v] for u, v in zip(prompt_embeds, seq_lens)]
         prompt_embeds = torch.stack(
-            [torch.cat([u, u.new_zeros(512 - u.size(0), u.size(1))]) for u in prompt_embeds], dim=0
+            [
+                torch.cat([u, u.new_zeros(512 - u.size(0), u.size(1))])
+                for u in prompt_embeds
+            ],
+            dim=0,
         )
 
         return prompt_embeds
@@ -85,8 +88,8 @@ if __name__ == "__main__":
 
     text = ["hello world"]
     text_embeddings = text_encoder.encode(text)
-    
-    print(text_embeddings.shape) # torch.Size([1, 512, 4096])
+
+    print(text_embeddings.shape)  # torch.Size([1, 512, 4096])
     print(text_embeddings.dtype)
     print(text_embeddings.device)
-    print(text_embeddings.sum()) # 1.9766
+    print(text_embeddings.sum())  # 1.9766
