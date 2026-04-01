@@ -164,7 +164,7 @@ class RotaryPositionEmbedding3D:
         return freqs
 
 
-def apply_rope_freqs(x: Tensor, freqs: Tensor) -> Tensor:
+def apply_rope_freqs(x: Tensor, freqs: Tensor, interleaved: bool = False) -> Tensor:
     """Apply RoPE frequencies to the input tensor.
 
     Args:
@@ -174,4 +174,6 @@ def apply_rope_freqs(x: Tensor, freqs: Tensor) -> Tensor:
     Returns:
         Output tensor of shape ``[B, S, H, D]``.
     """
-    return apply_rotary_pos_emb(x, freqs, tensor_format="bshd", fused=True)
+    return apply_rotary_pos_emb(
+        x, freqs, tensor_format="bshd", fused=True, interleaved=interleaved
+    )
