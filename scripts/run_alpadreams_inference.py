@@ -9,12 +9,12 @@ from huggingface_hub import login as huggingface_login
 from flashsim.configs.alpadreams import ALPADREAMS_CONFIGS
 from flashsim.io.s3_sync import sync_s3_dir_to_local
 
-
-EXAMPLE_DATA_DIR = os.path.join(
+EXAMPLE_DATA_DIR_S3 = "s3://flashsim/assets/example_data/alpadreams"
+EXAMPLE_DATA_DIR_LOCAL = os.path.join(
     os.path.dirname(__file__), "../assets/example_data/alpadreams"
 )
-HDMAP_VIDEO_PATH = os.path.join(EXAMPLE_DATA_DIR, "camera_front_wide_120fov.mp4")
-FIRST_FRAME_PATH = os.path.join(EXAMPLE_DATA_DIR, "camera_front_wide_120fov.png")
+HDMAP_VIDEO_PATH = os.path.join(EXAMPLE_DATA_DIR_LOCAL, "camera_front_wide_120fov.mp4")
+FIRST_FRAME_PATH = os.path.join(EXAMPLE_DATA_DIR_LOCAL, "camera_front_wide_120fov.png")
 PROMPT = (
     "Driving scene from a front-facing car camera. Urban environment with roads, vehicles, pedestrians, "
     "traffic signs, and buildings. Clear visibility, realistic lighting, photorealistic quality. "
@@ -29,9 +29,9 @@ assert os.path.exists(CREDENTIAL_PATH), (
     f"Credential file not found at {CREDENTIAL_PATH}"
 )
 sync_s3_dir_to_local(
-    s3_dir="s3://flashsim/assets/example_data/alpadreams",
+    s3_dir=EXAMPLE_DATA_DIR_S3,
     s3_credential_path=CREDENTIAL_PATH,
-    cache_dir=EXAMPLE_DATA_DIR,
+    cache_dir=EXAMPLE_DATA_DIR_LOCAL,
     max_workers=10,
     show_progress=True,
     verify_checksum=True,
