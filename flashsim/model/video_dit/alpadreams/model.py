@@ -2,15 +2,21 @@ from dataclasses import dataclass, field
 from typing import Final
 
 import torch
+import torch.nn.functional as F
 from torch import Tensor
 
 from flashsim.model.video_dit.base import BaseVideoDiT, denoise, add_noise
 from flashsim.checkpoint.load import load_checkpoint
 from flashsim.configs import InstantiateConfig
+from flashsim.distributed.context_parallel import split_inputs_cp
 
 from .rope import RotaryPositionEmbedding3D
 from .network import CosmosDiTNetwork, CosmosDiTNetworkCache, CosmosDiTNetworkConfig
 from .flow_match import FlowMatchScheduler
+from .context_parallel_strategy import (
+    HierarchicalCPGroups,
+    create_hierarchical_cp_groups,
+)
 
 DEFAULT_CAMERAS: Final[tuple[str, ...]] = (
     "camera_front_wide_120fov",
@@ -93,7 +99,6 @@ class CosmosDiTConfig(InstantiateConfig["CosmosDiT"]):
     # Network configurations
     enable_hdmap_condition: bool = True
     encode_with_pixel_shuffle: bool = False
-    enable_cross_view_attn: bool = False
     network: CosmosDiTNetworkConfig = field(
         default_factory=lambda: CosmosDiTNetworkConfig()
     )
@@ -115,13 +120,15 @@ class CosmosDiTConfig(InstantiateConfig["CosmosDiT"]):
     # Chunk size: Number of tokens along T dimension. (after patchification)
     len_t: int = 4
 
+    # Multiview setup
+    num_views: int = 1
+
     # Checkpoint path
     checkpoint_path: str | None = None
 
     # Noise level for KV cache update.
     context_noise: int = 128
 
-    device: torch.device = torch.device("cuda")
     dtype: torch.dtype = torch.bfloat16
 
     def __post_init__(self):
@@ -133,7 +140,7 @@ class CosmosDiTConfig(InstantiateConfig["CosmosDiT"]):
         else:
             self.network.additional_concat_ch = 0
 
-        self.network.enable_cross_view_attn = self.enable_cross_view_attn
+        self.network.enable_cross_view_attn = self.num_views > 1
 
 
 class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
@@ -141,15 +148,30 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
     Cosmos DiT for video generation.
     """
 
-    def __init__(self, config: CosmosDiTConfig):
+    def __init__(
+        self, config: CosmosDiTConfig, device: torch.device = torch.device("cuda")
+    ):
         super().__init__()
+        # multi-GPU setup
+        if torch.distributed.is_initialized():
+            world_size = torch.distributed.get_world_size()
+            rank = torch.distributed.get_rank()
+            self.cp_groups = create_hierarchical_cp_groups(
+                world_size=world_size,
+                rank=rank,
+                V=config.num_views,
+                T=config.len_t,
+                single_group_as_none=True,
+            )
+        else:
+            self.cp_groups = HierarchicalCPGroups(rank=0)
+
         self.config = config
         self.dtype = config.dtype
-        self.device = config.device
+        self.device = device
 
-        self.network = CosmosDiTNetwork(config=self.config.network).to(
-            self.device, self.dtype
-        )
+        self.network = CosmosDiTNetwork(config=self.config.network)
+        self.network = self.network.to(device=self.device, dtype=self.dtype)
 
         if self.config.checkpoint_path is not None:
             state_dict = load_checkpoint(self.config.checkpoint_path)
@@ -203,6 +225,18 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         Returns:
             The cache for the video DiT.
         """
+        self.network.set_context_parallel_group(
+            # self-attention CP split along THW dimension
+            self_attn_group=self.cp_groups.THW_group,
+            # cross-view attention CP split along V dimension
+            cross_view_attn_group=self.cp_groups.V_group,
+        )
+
+        if self.cp_groups.V_group is not None:
+            text_embeddings = split_inputs_cp(
+                text_embeddings, seq_dim=1, cp_group=self.cp_groups.V_group
+            )
+
         # compute size of the tokens after patchification
         len_t = self.config.len_t
         len_h = height // self.config.network.patch_spatial
@@ -218,8 +252,12 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
             w_extrapolation_ratio=self.config.w_extrapolation_ratio,
             device=self.device,
         )
+        # RoPE CP splits along same dimension as self-attention CP.
+        rope_adapter.set_context_parallel_group(cp_group=self.cp_groups.THW_group)
 
         num_tokens_per_frame = len_h * len_w
+        if self.cp_groups.THW_group is not None:
+            num_tokens_per_frame //= self.cp_groups.THW_group.size()
         network_cache = self.network.initialize_cache(
             chunk_size=num_tokens_per_frame * len_t,
             window_size=num_tokens_per_frame * self.config.window_size_t,
@@ -228,7 +266,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         )
 
         view_indices: Tensor | None = None
-        if self.config.enable_cross_view_attn:
+        if self.config.num_views > 1:
             batch_size = encoded_image.shape[0]
             assert view_names is not None, (
                 "View names must be provided if cross-view attention is enabled"
@@ -239,6 +277,10 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
                 dtype=torch.long,
             )
             view_indices = view_indices.repeat(batch_size, 1)
+            if self.cp_groups.V_group is not None:
+                view_indices = split_inputs_cp(
+                    view_indices, seq_dim=1, cp_group=self.cp_groups.V_group
+                )
 
         B, V, _, _, H, W = encoded_image.shape
         condition_video_input_mask_first_block = torch.zeros(
@@ -249,11 +291,14 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
             B, V, len_t, 1, H, W, device=self.device, dtype=self.dtype
         )
 
+        # TODO: check whether repeat or zero padding is better
+        image = F.pad(encoded_image, (0, 0, 0, 0, 0, 0, 0, len_t - 1))
+
         cache = CosmosDiTCache(
             len_h=len_h,
             len_w=len_w,
             view_indices=view_indices,
-            image=encoded_image,
+            image=image,
             network_cache=network_cache,
             rope_adapter=rope_adapter,
             condition_video_input_mask_first_block=condition_video_input_mask_first_block,
@@ -304,14 +349,16 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         assert autoregressive_index >= 0, "Index must be updated before predicting flow"
         alpha = self.scheduler.timestep_to_sigma(timestep)
 
-        len_t = self.config.len_t
+        batch_size = condition.hdmap.shape[0]
+        num_views = condition.hdmap.shape[1]
+        len_t = condition.hdmap.shape[2]
         len_h = cache.len_h
         len_w = cache.len_w
 
-        rope_freqs = cache.rope_adapter.shift_t(offset=autoregressive_index * len_t)
+        rope_freqs = cache.rope_adapter.shift_t(
+            offset=autoregressive_index * self.config.len_t
+        )
 
-        batch_size = condition.hdmap.shape[0]
-        num_views = condition.hdmap.shape[1]
         token_dim = (
             self.config.network.in_channels
             * self.config.network.patch_temporal
@@ -363,19 +410,34 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         return x0
 
     def _patchify(self, x: Tensor | CosmosDiTCondition | CosmosDiTCache) -> Tensor:
+        process_groups = [
+            self.cp_groups.V_group,
+            self.cp_groups.T_group,
+            self.cp_groups.HW_group,
+        ]
+        cp_dims = [1, 2, 3]
+
         if isinstance(x, CosmosDiTCache):
             if x._is_patchified:
                 return x
             else:
-                x.image = self.network.patchify_and_maybe_split_cp(x.image)
+                x.image = self.network.patchify_and_maybe_split_cp(
+                    x.image,
+                    process_groups=process_groups,
+                    cp_dims=cp_dims,
+                )
                 x.condition_video_input_mask_first_block = (
                     self.network.patchify_and_maybe_split_cp(
-                        x.condition_video_input_mask_first_block
+                        x.condition_video_input_mask_first_block,
+                        process_groups=process_groups,
+                        cp_dims=cp_dims,
                     )
                 )
                 x.condition_video_input_mask_other_blocks = (
                     self.network.patchify_and_maybe_split_cp(
-                        x.condition_video_input_mask_other_blocks
+                        x.condition_video_input_mask_other_blocks,
+                        process_groups=process_groups,
+                        cp_dims=cp_dims,
                     )
                 )
                 x._is_patchified = True
@@ -384,16 +446,37 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
             if x._is_patchified:
                 return x
             else:
-                x.hdmap = self.network.patchify_and_maybe_split_cp(x.hdmap)
+                x.hdmap = self.network.patchify_and_maybe_split_cp(
+                    x.hdmap,
+                    process_groups=process_groups,
+                    cp_dims=cp_dims,
+                )
                 x._is_patchified = True
                 return x
         elif isinstance(x, Tensor):
-            return self.network.patchify_and_maybe_split_cp(x)
+            return self.network.patchify_and_maybe_split_cp(
+                x,
+                process_groups=process_groups,
+                cp_dims=cp_dims,
+            )
         else:
             raise ValueError(f"Invalid input type: {type(x)}")
 
     def _unpatchify(self, len_h: int, len_w: int, x: Tensor) -> Tensor:
-        return self.network.unpatchify_and_maybe_gather_cp(pH=len_h, pW=len_w, x=x)
+        process_groups = [
+            self.cp_groups.V_group,
+            self.cp_groups.T_group,
+            self.cp_groups.HW_group,
+        ]
+        cp_dims = [1, 2, 3]
+
+        return self.network.unpatchify_and_maybe_gather_cp(
+            pH=len_h,
+            pW=len_w,
+            x=x,
+            process_groups=process_groups,
+            cp_dims=cp_dims,
+        )
 
 
 # python -m flashsim.model.video_dit.alpadreams.model

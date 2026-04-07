@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 from einops import rearrange
 from torch import Tensor
+import torch
 
 from flashsim.model.video_vae.base import BaseVideoVAE
 from flashsim.configs import InstantiateConfig
@@ -24,7 +25,11 @@ class PixelShuffleVAEInterfaceConfig(InstantiateConfig["PixelShuffleVAEInterface
 class PixelShuffleVAEInterface(
     BaseVideoVAE[PixelShuffleVAECache, PixelShuffleVAECache]
 ):
-    def __init__(self, config: PixelShuffleVAEInterfaceConfig):
+    def __init__(
+        self,
+        config: PixelShuffleVAEInterfaceConfig,
+        device: torch.device = torch.device("cuda"),
+    ):
         self.config = config
 
     def initialize_encode_cache(self) -> PixelShuffleVAECache:

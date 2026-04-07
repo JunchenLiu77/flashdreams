@@ -25,7 +25,6 @@ class CosmosReason1TextEncoderConfig(InstantiateConfig["CosmosReason1TextEncoder
 
     model_name: str = "nvidia/Cosmos-Reason1-7B"
     max_length: int = 512
-    device: torch.device = torch.device("cuda")
     dtype: torch.dtype = torch.bfloat16
     embedding_concat_strategy: str = (
         "full_concat"  # # Checkpoint uses full_concat -> 100352 dims
@@ -56,7 +55,11 @@ class CosmosReason1TextEncoder(BaseTextEncoder):
     MEAN_POOLING = "mean_pooling"  # Mean of all layer outputs: 3584
     POOL_EVERY_N_LAYERS_AND_CONCAT = "pool_every_n_layers_and_concat"
 
-    def __init__(self, config: CosmosReason1TextEncoderConfig):
+    def __init__(
+        self,
+        config: CosmosReason1TextEncoderConfig,
+        device: torch.device = torch.device("cuda"),
+    ):
         """
         Initialize Cosmos-Reason1 text encoder using Qwen2.5-VL.
 
@@ -74,7 +77,7 @@ class CosmosReason1TextEncoder(BaseTextEncoder):
         """
 
         self.max_length = config.max_length
-        self.device = config.device
+        self.device = device
         self.dtype = config.dtype
         self.embedding_concat_strategy = config.embedding_concat_strategy
         self.n_layers_per_group = config.n_layers_per_group
@@ -101,7 +104,7 @@ class CosmosReason1TextEncoder(BaseTextEncoder):
             dtype=config.dtype,
         )
 
-        self.model.to(config.device)
+        self.model.to(device)
         self.model.eval()
         self.model.requires_grad_(False)
 

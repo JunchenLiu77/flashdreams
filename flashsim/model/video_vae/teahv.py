@@ -20,17 +20,18 @@ class TeahvInterfaceConfig(InstantiateConfig["TeahvInterface"]):
     parallel: bool = True
 
     dtype: torch.dtype = torch.bfloat16
-    device: torch.device = torch.device("cuda")
 
 
 class TeahvInterface(BaseVideoVAE[TAEHVCache, TAEHVCache]):
-    def __init__(self, config: TeahvInterfaceConfig):
+    def __init__(
+        self, config: TeahvInterfaceConfig, device: torch.device = torch.device("cuda")
+    ):
         # parallel=True: faster + higher memory
         # parallel=False: lower memory
         self.parallel = config.parallel
         self.need_scaled = "lighttae" in config.checkpoint_path
         self.taehv = TAEHV(checkpoint_path=config.checkpoint_path).to(
-            device=config.device, dtype=config.dtype
+            device=device, dtype=config.dtype
         )
 
         self.mean = torch.tensor(
@@ -53,7 +54,7 @@ class TeahvInterface(BaseVideoVAE[TAEHVCache, TAEHVCache]):
                 -0.2921,
             ],
             dtype=config.dtype,
-            device=config.device,
+            device=device,
         )
 
         self.std = torch.tensor(
@@ -76,7 +77,7 @@ class TeahvInterface(BaseVideoVAE[TAEHVCache, TAEHVCache]):
                 1.9160,
             ],
             dtype=config.dtype,
-            device=config.device,
+            device=device,
         )
 
     def initialize_encode_cache(self) -> TAEHVCache:

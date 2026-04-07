@@ -19,12 +19,13 @@ class WanTextEncoderConfig(InstantiateConfig["WanTextEncoder"]):
         "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
         "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
     ] = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
-    device: torch.device = torch.device("cuda")
     dtype: torch.dtype = torch.bfloat16
 
 
 class WanTextEncoder(BaseTextEncoder):
-    def __init__(self, config: WanTextEncoderConfig):
+    def __init__(
+        self, config: WanTextEncoderConfig, device: torch.device = torch.device("cuda")
+    ):
         self.text_encoder = UMT5EncoderModel.from_pretrained(
             config.model_id_or_local_path,
             cache_dir=os.getenv("HF_HOME", None),
@@ -32,7 +33,7 @@ class WanTextEncoder(BaseTextEncoder):
             local_files_only=str2bool(os.getenv("LOCAL_FILES_ONLY", "false")),
         )
         self.text_encoder.eval().requires_grad_(False)
-        self.text_encoder.to(config.device, config.dtype)
+        self.text_encoder.to(device, config.dtype)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             config.model_id_or_local_path,

@@ -21,17 +21,18 @@ class WanVAEInterfaceConfig(InstantiateConfig["WanVAEInterface"]):
     checkpoint_path: str = AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["vae"]
 
     dtype: torch.dtype = torch.bfloat16
-    device: torch.device = torch.device("cuda")
 
 
 class WanVAEInterface(BaseVideoVAE[WanVAECache, WanVAECache]):
-    def __init__(self, config: WanVAEInterfaceConfig):
+    def __init__(
+        self, config: WanVAEInterfaceConfig, device: torch.device = torch.device("cuda")
+    ):
         use_lightvae = "lightvae" in config.checkpoint_path
         self.vae = WanVAE(
             vae_path=config.checkpoint_path,
             use_lightvae=use_lightvae,
             dtype=config.dtype,
-            device=config.device,
+            device=device,
         )
 
     def initialize_encode_cache(self) -> WanVAECache:

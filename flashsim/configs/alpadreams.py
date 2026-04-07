@@ -29,7 +29,7 @@ ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_lightvae_lighttae"] = (
         dit=CosmosDiTConfig(
             enable_hdmap_condition=True,
             encode_with_pixel_shuffle=False,
-            enable_cross_view_attn=False,
+            num_views=1,
             # For 720P set to 3.0; for 480P set to 2.0;
             h_extrapolation_ratio=3.0,
             w_extrapolation_ratio=3.0,
@@ -110,7 +110,7 @@ ALPADREAMS_CONFIGS["mv_2steps_chunk4_loc8_pshuffle_lighttae"] = (
         dit=CosmosDiTConfig(
             enable_hdmap_condition=True,
             encode_with_pixel_shuffle=True,
-            enable_cross_view_attn=True,
+            num_views=4,
             # For 720P set to 3.0; for 480P set to 2.0;
             h_extrapolation_ratio=3.0,
             w_extrapolation_ratio=3.0,

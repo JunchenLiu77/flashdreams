@@ -43,12 +43,16 @@ class AlpadreamsPipelineConfig(InstantiateConfig["AlpadreamsPipeline"]):
 
 
 class AlpadreamsPipeline:
-    def __init__(self, config: AlpadreamsPipelineConfig):
-        self.text_encoder = config.text_encoder.setup()
-        self.image_encoder = config.image_encoder.setup()
-        self.tokenizer = config.tokenizer.setup()
-        self.detokenizer = config.detokenizer.setup()
-        self.dit = config.dit.setup()
+    def __init__(
+        self,
+        config: AlpadreamsPipelineConfig,
+        device: torch.device = torch.device("cuda"),
+    ):
+        self.text_encoder = config.text_encoder.setup(device=device)
+        self.image_encoder = config.image_encoder.setup(device=device)
+        self.tokenizer = config.tokenizer.setup(device=device)
+        self.detokenizer = config.detokenizer.setup(device=device)
+        self.dit = config.dit.setup(device=device)
 
     def initialize_cache(
         self, text: list[list[str]], image: Tensor, view_names: list[str] | None = None

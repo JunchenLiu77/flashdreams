@@ -7,6 +7,7 @@ import mediapy as media
 from einops import rearrange
 from huggingface_hub import login as huggingface_login
 
+from flashsim.distributed import init as distributed_init
 from flashsim.configs.alpadreams import ALPADREAMS_CONFIGS
 from flashsim.io.s3_sync import sync_s3_dir_to_local
 
@@ -95,7 +96,12 @@ assert HF_TOKEN is not None, "HF_TOKEN is not set"
 huggingface_login(HF_TOKEN)
 print("logged in to huggingface")
 
-device = torch.device("cuda")
+# initialize distributed inference
+distributed_init()
+world_size = torch.distributed.get_world_size()
+rank = torch.distributed.get_rank()
+print(f"initialized distributed training with world size {world_size} and rank {rank}")
+device = torch.device(f"cuda:{rank}")
 dtype = torch.bfloat16
 
 # prepare data
@@ -124,8 +130,11 @@ prompts = [prompts]  # [B, V]
 batch_size, num_views, hdmap_num_frames, _3, height, width = hdmap_videos.shape
 print("loaded hdmap_videos.shape:", hdmap_videos.shape)
 
+if torch.distributed.is_initialized():
+    torch.distributed.barrier()
+
 # initialize pipeline
-pipeline = ALPADREAMS_CONFIGS[CONFIG_NAME].setup()
+pipeline = ALPADREAMS_CONFIGS[CONFIG_NAME].setup(device=device)
 cache = pipeline.initialize_cache(
     text=prompts, image=first_frames, view_names=CAMERA_NAMES
 )
@@ -153,13 +162,17 @@ generated_num_frames = generated_video.shape[2]
 print("end of streaming inference, generated_video.shape:", generated_video.shape)
 
 # export result
-condition = hdmap_videos[:, :, :generated_num_frames]
-canvas = rearrange(
-    torch.cat([condition, generated_video], dim=-2), "1 v t c h w -> t h (v w) c"
-)
-canvas = (canvas.float().cpu().numpy() + 1.0) / 2.0  # range [0, 1]
-canvas = (canvas * 255).astype(np.uint8)
-save_path = f"outputs/{CONFIG_NAME}.mp4"
-os.makedirs(os.path.dirname(save_path), exist_ok=True)
-media.write_video(save_path, canvas, fps=30)
-print(f"saved generated video to {save_path}")
+if rank == 0:
+    condition = hdmap_videos[:, :, :generated_num_frames]
+    canvas = rearrange(
+        torch.cat([condition, generated_video], dim=-2), "1 v t c h w -> t h (v w) c"
+    )
+    canvas = (canvas.float().cpu().numpy() + 1.0) / 2.0  # range [0, 1]
+    canvas = (canvas * 255).astype(np.uint8)
+    save_path = f"outputs/{CONFIG_NAME}.mp4"
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    media.write_video(save_path, canvas, fps=30)
+    print(f"saved generated video to {save_path}")
+
+if torch.distributed.is_initialized():
+    torch.distributed.destroy_process_group()
