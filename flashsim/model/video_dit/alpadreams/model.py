@@ -354,11 +354,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         assert autoregressive_index >= 0, "Index must be updated before predicting flow"
         alpha = self.scheduler.timestep_to_sigma(timestep)
 
-        batch_size = condition.hdmap.shape[0]
-        num_views = condition.hdmap.shape[1]
-        len_t = condition.hdmap.shape[2]
-        len_h = cache.len_h
-        len_w = cache.len_w
+        batch_size, num_views, len_t, len_hw, _ = condition.hdmap.shape
 
         rope_freqs = cache.rope_adapter.shift_t(
             offset=autoregressive_index * self.config.len_t
@@ -369,7 +365,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
             * self.config.network.patch_temporal
             * self.config.network.patch_spatial**2
         )
-        input_shape = (batch_size, num_views, len_t, len_h * len_w, token_dim)
+        input_shape = (batch_size, num_views, len_t, len_hw, token_dim)
 
         if x0 is None:
             # pure noise
@@ -390,6 +386,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         if autoregressive_index == 0:
             mask = condition_video_input_mask[..., :1]
             image_latent = cache.image
+            rank = torch.distributed.get_rank()
             noisy_input.mul_(1.0 - mask).add_(image_latent * mask)
 
         # mock predicted flow
