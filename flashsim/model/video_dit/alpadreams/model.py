@@ -102,8 +102,9 @@ class CosmosDiTConfig(InstantiateConfig["CosmosDiT"]):
     network: CosmosDiTNetworkConfig = field(
         default_factory=lambda: CosmosDiTNetworkConfig()
     )
+    dtype: torch.dtype = torch.bfloat16
 
-    # For 720P set to 3.0; for 480P set to 2.0;
+    # RoPE: For 720P set to 3.0; for 480P set to 2.0;
     h_extrapolation_ratio: float = 3.0
     w_extrapolation_ratio: float = 3.0
 
@@ -129,7 +130,8 @@ class CosmosDiTConfig(InstantiateConfig["CosmosDiT"]):
     # Noise level for KV cache update.
     context_noise: int = 128
 
-    dtype: torch.dtype = torch.bfloat16
+    # Speedup.
+    compile_network: bool = True
 
     def __post_init__(self):
         # Propagate configurations to the network.
@@ -172,6 +174,11 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
 
         self.network = CosmosDiTNetwork(config=self.config.network)
         self.network = self.network.to(device=self.device, dtype=self.dtype)
+        self.network.eval()
+        self.network.set_context_parallel_group(
+            self_attn_group=self.cp_groups.THW_group,
+            cross_view_attn_group=self.cp_groups.V_group,
+        )
 
         if self.config.checkpoint_path is not None:
             state_dict = load_checkpoint(self.config.checkpoint_path)
@@ -180,6 +187,11 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
                     state_dict[k[len("net.") :]] = v
             self.network.load_state_dict(state_dict)
         self.network.update_parameters_after_loading_checkpoint()
+
+        if self.config.compile_network:
+            self.network = torch.compile(
+                self.network, mode="max-autotune-no-cudagraphs"
+            )
 
         # define scheduler
         num_train_timestep = 1000
@@ -225,13 +237,6 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         Returns:
             The cache for the video DiT.
         """
-        self.network.set_context_parallel_group(
-            # self-attention CP split along THW dimension
-            self_attn_group=self.cp_groups.THW_group,
-            # cross-view attention CP split along V dimension
-            cross_view_attn_group=self.cp_groups.V_group,
-        )
-
         if self.cp_groups.V_group is not None:
             text_embeddings = split_inputs_cp(
                 text_embeddings, seq_dim=1, cp_group=self.cp_groups.V_group
