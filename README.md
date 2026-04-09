@@ -61,8 +61,29 @@ export HF_TOKEN=<YOUR-HF-TOKEN>
 # - (optional) huggingface cache path
 export HF_HOME=~/.cache/huggingface # default
 
-# 2. Run inference script. Self-forcing checkpoint will be auto-downloaded at first run from huggingface.
+# 2. Run inference script. Checkpoint will be auto-downloaded at first run from huggingface.
 PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
     scripts/run_wan_t2v.py \
     --total_blocks 7
+```
+
+
+## Instructions to run Causal-forcing I2V Inference.
+
+```bash
+# 0. request interactive node with pre-built container save as above alpadreams demo.
+
+# 1. setup huggingface
+# - (required) huggingface token
+export HF_TOKEN=<YOUR-HF-TOKEN>
+# - (optional) huggingface cache path
+export HF_HOME=~/.cache/huggingface # default
+
+# 2. Run inference script. Checkpoint will be auto-downloaded at first run from huggingface.
+PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
+    scripts/run_wan_t2v.py \
+    --total_blocks 21 \
+    --overwrite_config_name casual_forcing_framewise \
+    --prompt_or_txt_path assets/example_data/i2v/prompt.txt  \
+    --image_path assets/example_data/i2v/image.jpg
 ```

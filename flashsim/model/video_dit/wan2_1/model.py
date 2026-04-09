@@ -54,7 +54,7 @@ class WanDiTCache:
     rope_adapter: RotaryPositionEmbedding3D
 
     # For KV cache update in the end.
-    x0: Tensor | None = None  # clean latent [B, V, pT, pHW, D]
+    x0: Tensor | None = None  # clean latent [B, V, pTHW, D]
     condition: WanDiTCondition | None = None
 
     autoregressive_index: int = -1
@@ -187,6 +187,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         width: int,
         text_embeddings: Tensor,  # [B, V, L, D]
         image_embeddings: Tensor | None = None,  # [B, V, L, D]
+        initial_latent: Tensor | None = None,  # [B, V, 1, C, H, W]
         view_names: list[str] | None = None,
     ) -> WanDiTNetworkCache:
         """
@@ -196,7 +197,8 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             height: The video height after VAE spatial compression.
             width: The video width after VAE spatial compression.
             text_embeddings: Text embeddings [B, V, L, D]
-            image_embeddings: CLIP Image embeddings [B, V, L, D] or None for text-to-video
+            image_embeddings: CLIP Image embeddings [B, V, L, D]
+            initial_latent: VAE encoded first latent [B, V, 1, C, H, W]
             view_names: List of view names.
 
         Returns:
@@ -247,6 +249,10 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             num_views=text_embeddings.shape[1],
         )
         cache = self._patchify(cache)
+        if initial_latent is not None:
+            cache.autoregressive_index = 0
+            cache.x0 = self._patchify(initial_latent)
+            cache.condition = WanDiTCondition()
         return cache
 
     def generate(
@@ -270,11 +276,16 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         x0 = self._unpatchify(cache.len_h, cache.len_w, x0)
         return x0
 
-    def finalize(self, cache: WanDiTCache, rng: torch.Generator | None = None) -> None:
+    def finalize(
+        self,
+        cache: WanDiTCache,
+        context_noise: int | None = None,
+        rng: torch.Generator | None = None,
+    ) -> None:
         # update kv cache
-        timestep = torch.tensor(
-            [self.config.context_noise], device=self.device, dtype=self.dtype
-        )
+        if context_noise is None:
+            context_noise = self.config.context_noise
+        timestep = torch.tensor([context_noise], device=self.device, dtype=self.dtype)
         _ = self._predict_x0(cache.x0, timestep, cache.condition, cache, rng=rng)
 
     def _predict_x0(

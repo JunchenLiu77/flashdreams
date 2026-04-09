@@ -154,12 +154,20 @@ class Wan2_1Pipeline:
         dit_cache = self.dit.initialize_cache(
             height=encoded_height,
             width=encoded_width,
-            image_embeddings=image_embeddings,
             text_embeddings=text_embeddings,
+            initial_latent=image_embeddings,
         )
 
         tokenizer_cache = self.tokenizer.initialize_encode_cache()
         detokenizer_cache = self.detokenizer.initialize_decode_cache()
+
+        # if the initial latent is available, refresh the cache with it.
+        if dit_cache.x0 is not None:
+            initial_latent = self.dit._unpatchify(
+                dit_cache.len_h, dit_cache.len_w, dit_cache.x0
+            )
+            _ = self.detokenizer.decode(initial_latent, cache=detokenizer_cache)
+            _ = self.dit.finalize(dit_cache, context_noise=0.0, rng=self.rng)
 
         return Wan2_1PipelineCache(
             tokenizer_cache=tokenizer_cache,
@@ -186,7 +194,7 @@ class Wan2_1Pipeline:
         """
         if autoregressive_index >= len(cache.profile_events):
             cache.profile_events.append(ProfileEvents())
-        profile_events = cache.profile_events[autoregressive_index]
+        profile_events = cache.profile_events[-1]
 
         if profile_events is not None:
             profile_events.tic.record()
@@ -195,6 +203,10 @@ class Wan2_1Pipeline:
             profile_events.toc_after_encode.record()
 
         # 2. run DiT denoising
+        assert autoregressive_index > cache.dit_cache.autoregressive_index, (
+            f"Autoregressive index must be greater than the current "
+            f"autoregressive index {cache.dit_cache.autoregressive_index}"
+        )
         cache.dit_cache.autoregressive_index = autoregressive_index
         clean_input = self.dit.generate(
             condition=WanDiTCondition(), cache=cache.dit_cache, rng=self.rng
@@ -226,7 +238,7 @@ class Wan2_1Pipeline:
         """
         self.dit.finalize(cache.dit_cache, rng=self.rng)
 
-        profile_events = cache.profile_events[autoregressive_index]
+        profile_events = cache.profile_events[-1]
         profile_events.toc_after_finalize.record()
 
     @torch.no_grad()

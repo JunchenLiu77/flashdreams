@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import mediapy as media
 from einops import rearrange
+import cv2
 from huggingface_hub import login as huggingface_login
 
 from flashsim.distributed import init as distributed_init
@@ -21,14 +22,25 @@ parser.add_argument(
     "--overwrite_config_name", type=str, default=None, help="Overwrite config name."
 )
 parser.add_argument(
-    "--prompt", type=str, default=DEFAULT_TEXT_PROMPT, help="Text prompt."
+    "--prompt_or_txt_path",
+    type=str,
+    default=DEFAULT_TEXT_PROMPT,
+    help="Text prompt or text file path.",
 )
+parser.add_argument("--image_path", type=str, default=None, help="Image path.")
+parser.add_argument("--video_height", type=int, default=480, help="Video height.")
+parser.add_argument("--video_width", type=int, default=832, help="Video width.")
 args = parser.parse_args()
+
+if args.prompt_or_txt_path.endswith(".txt"):
+    with open(args.prompt_or_txt_path, "r") as f:
+        args.prompt_or_txt_path = f.readlines()[0]
 
 CAMERA_NAMES = ["default"]
 DATA = [
     {
-        "prompt": args.prompt,
+        "first_frame_path": args.image_path,
+        "prompt": args.prompt_or_txt_path,
     }
     for name in CAMERA_NAMES
 ]
@@ -54,22 +66,46 @@ dtype = torch.bfloat16
 
 # prepare data
 prompts = []
+first_frames: list[torch.Tensor] | None = []
 for data in DATA:  # loop over views
     prompts.append(data["prompt"])
-prompts = [prompts]  # add a batch dimension
+    first_frame_path = data["first_frame_path"]
+    if first_frame_path is not None:
+        first_frame = media.read_image(first_frame_path)[
+            ..., :3
+        ]  # only keep RGB channels
+        first_frame = cv2.resize(first_frame, (args.video_width, args.video_height))
+        first_frame = (
+            torch.from_numpy(first_frame).to(dtype=dtype, device=device) / 127.5 - 1.0
+        )  # range [-1, 1]
+        first_frame = rearrange(first_frame, "h w c -> 1 c h w")  # [1, C, H, W]
+        first_frames.append(first_frame)
+# add a batch dimension
+prompts = [prompts]
+if len(first_frames) > 0:
+    first_frames = torch.stack(first_frames, dim=0).unsqueeze(0)  # [B, V, 1, C, H, W]
+    start_index = 1
+else:
+    first_frames = None
+    start_index = 0
 
 # initialize pipeline
 pipeline = WAN2_1_CONFIGS[CONFIG_NAME].setup(device=device)
-cache = pipeline.initialize_cache(video_height=480, video_width=832, text=prompts)
+cache = pipeline.initialize_cache(
+    video_height=args.video_height,
+    video_width=args.video_width,
+    text=prompts,
+    image=first_frames,
+)
 
 torch.cuda.synchronize()
 if torch.distributed.is_initialized():
     torch.distributed.barrier()
 
 # streaming inference
-start = 0
-generated_video = []
-for i in range(args.total_blocks):
+start = 1 if first_frames is not None else 0
+generated_video = [first_frames]
+for i in range(start_index, args.total_blocks):
     num_frames = pipeline.get_num_frames(i)
     end = start + num_frames
     print(
