@@ -85,7 +85,7 @@ PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
     scripts/run_wan_t2v.py \
     --total_blocks 21 \
     --overwrite_config_name casual_forcing_framewise
-    
+
 # - I2V
 PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
     scripts/run_wan_t2v.py \

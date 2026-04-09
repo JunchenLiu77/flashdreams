@@ -143,9 +143,9 @@ class Wan2_1Pipeline:
             assert image.shape[-2:] == (video_height, video_width), (
                 f"image shape must be {video_height}x{video_width}, but got {image.shape[-2:]}"
             )
-            image_embeddings = self.image_encoder.encode(image)
+            initial_latent = self.image_encoder.encode(image)
         else:
-            image_embeddings = None
+            initial_latent = None
 
         text_embeddings = torch.stack(
             [self.text_encoder.encode(t) for t in text], dim=0
@@ -155,17 +155,14 @@ class Wan2_1Pipeline:
             height=encoded_height,
             width=encoded_width,
             text_embeddings=text_embeddings,
-            initial_latent=image_embeddings,
+            initial_latent=initial_latent,
         )
 
         tokenizer_cache = self.tokenizer.initialize_encode_cache()
         detokenizer_cache = self.detokenizer.initialize_decode_cache()
 
         # if the initial latent is available, refresh the cache with it.
-        if dit_cache.x0 is not None:
-            initial_latent = self.dit._unpatchify(
-                dit_cache.len_h, dit_cache.len_w, dit_cache.x0
-            )
+        if initial_latent is not None:
             _ = self.detokenizer.decode(initial_latent, cache=detokenizer_cache)
             _ = self.dit.finalize(dit_cache, context_noise=0.0, rng=self.rng)
 

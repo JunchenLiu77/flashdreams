@@ -50,12 +50,6 @@ if args.overwrite_config_name is not None:
     CONFIG_NAME = args.overwrite_config_name
 print(f"Running Wan2_1 inference with config: {CONFIG_NAME}")
 
-# login huggingface
-HF_TOKEN = os.getenv("HF_TOKEN")
-assert HF_TOKEN is not None, "HF_TOKEN is not set"
-huggingface_login(HF_TOKEN)
-print("logged in to huggingface")
-
 # initialize distributed inference
 distributed_init()
 world_size = torch.distributed.get_world_size()
@@ -63,6 +57,13 @@ rank = torch.distributed.get_rank()
 print(f"initialized distributed training with world size {world_size} and rank {rank}")
 device = torch.device(f"cuda:{rank}")
 dtype = torch.bfloat16
+
+# login huggingface
+if rank == 0:
+    HF_TOKEN = os.getenv("HF_TOKEN")
+    assert HF_TOKEN is not None, "HF_TOKEN is not set"
+    huggingface_login(HF_TOKEN)
+    print("logged in to huggingface")
 
 # prepare data
 prompts = []

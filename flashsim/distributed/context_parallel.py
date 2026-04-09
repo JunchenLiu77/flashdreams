@@ -30,6 +30,8 @@ def split_inputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
         AssertionError: If the sequence dimension is not divisible by the number of ranks.
     """
     cp_size = cp_group.size()
+    if seq_dim < 0:
+        seq_dim = x.ndim + seq_dim  # bring it to positive dimension
 
     assert x.shape[seq_dim] % cp_size == 0, (
         f"{x.shape[seq_dim]} cannot divide cp_size {cp_size}"
