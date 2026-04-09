@@ -41,10 +41,6 @@ class ProfileEvents:
         }
 
     @staticmethod
-    def create(repeats: int) -> list["ProfileEvents"]:
-        return [ProfileEvents() for _ in range(repeats)]
-
-    @staticmethod
     def finalize(events: list["ProfileEvents"], skip_first_n: int = 0) -> None:
         if skip_first_n > 0:
             events = events[skip_first_n:]
@@ -65,6 +61,9 @@ class ProfileEvents:
         def perc1(t):
             return f"({t / time_to_decode * 100:06.3f}%)"
 
+        logger.info(
+            f"Profiling results for {n} events after skipping first {skip_first_n} events:"
+        )
         logger.info(f"Average Latency to Decode: {time_to_decode / n / 1000.0} seconds")
         logger.info(
             f"   ├─{perc1(elapsed_time_encode)} VAE encode HD map {elapsed_time_encode / n:.4f} ms"
@@ -86,6 +85,7 @@ class AlpadreamsPipelineCache:
     tokenizer_cache: WanVAECache | TAEHVCache
     detokenizer_cache: WanVAECache | TAEHVCache
     dit_cache: CosmosDiTCache
+    profile_events: list[ProfileEvents]
 
 
 @dataclass
@@ -156,6 +156,7 @@ class AlpadreamsPipeline:
             tokenizer_cache=tokenizer_cache,
             detokenizer_cache=detokenizer_cache,
             dit_cache=dit_cache,
+            profile_events=[],
         )
 
     @torch.no_grad()
@@ -164,7 +165,6 @@ class AlpadreamsPipeline:
         autoregressive_index: int,
         hdmap: Tensor,
         cache: AlpadreamsPipelineCache,
-        profile_events: ProfileEvents | None = None,
     ) -> Tensor:
         """
         Stream the inference of the video diffusion pipeline.
@@ -177,6 +177,10 @@ class AlpadreamsPipeline:
         Returns:
             The decoded video. [B, V, T, C, H, W]
         """
+        if autoregressive_index >= len(cache.profile_events):
+            cache.profile_events.append(ProfileEvents())
+        profile_events = cache.profile_events[autoregressive_index]
+
         if profile_events is not None:
             profile_events.tic.record()
 
@@ -212,16 +216,16 @@ class AlpadreamsPipeline:
     @torch.no_grad()
     def finalize(
         self,
+        autoregressive_index: int,
         cache: AlpadreamsPipelineCache,
-        profile_events: ProfileEvents | None = None,
     ) -> None:
         """
         Finalize the streaming inference. This will update the KV cache for the next block.
         """
         self.dit.finalize(cache.dit_cache)
 
-        if profile_events is not None:
-            profile_events.toc_after_finalize.record()
+        profile_events = cache.profile_events[autoregressive_index]
+        profile_events.toc_after_finalize.record()
 
     @torch.no_grad()
     def get_num_frames(self, autoregressive_index: int) -> int:

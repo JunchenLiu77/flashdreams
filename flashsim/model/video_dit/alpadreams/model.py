@@ -386,7 +386,6 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         if autoregressive_index == 0:
             mask = condition_video_input_mask[..., :1]
             image_latent = cache.image
-            rank = torch.distributed.get_rank()
             noisy_input.mul_(1.0 - mask).add_(image_latent * mask)
 
         # mock predicted flow

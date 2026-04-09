@@ -136,7 +136,6 @@ pipeline = ALPADREAMS_CONFIGS[CONFIG_NAME].setup(device=device)
 cache = pipeline.initialize_cache(
     text=prompts, image=first_frames, view_names=CAMERA_NAMES
 )
-profile_events = ProfileEvents.create(args.total_blocks)
 
 torch.cuda.synchronize()
 if torch.distributed.is_initialized():
@@ -158,12 +157,12 @@ for i in range(args.total_blocks):
             autoregressive_index=i,
             hdmap=hdmap_videos[:, :, start:end],
             cache=cache,
-            profile_events=profile_events[i],
         )
     )
     start = end
     pipeline.finalize(
-        cache, profile_events=profile_events[i]
+        autoregressive_index=i,
+        cache=cache,
     )  # update KV cache for the next block
 generated_video = torch.cat(generated_video, dim=2)  # [B, V, T, C, H, W], range [-1, 1]
 generated_num_frames = generated_video.shape[2]
@@ -172,7 +171,7 @@ print("end of streaming inference, generated_video.shape:", generated_video.shap
 if rank == 0:
     # print profiling results.
     torch.cuda.synchronize()
-    ProfileEvents.finalize(profile_events, skip_first_n=3)
+    ProfileEvents.finalize(cache.profile_events, skip_first_n=3)
 
     # export result
     condition = hdmap_videos[:, :, :generated_num_frames]
@@ -181,7 +180,7 @@ if rank == 0:
     )
     canvas = (canvas.float().cpu().numpy() + 1.0) / 2.0  # range [0, 1]
     canvas = (canvas * 255).astype(np.uint8)
-    save_path = f"outputs/{CONFIG_NAME}.mp4"
+    save_path = f"outputs/{world_size}gpus_{CONFIG_NAME}.mp4"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     media.write_video(save_path, canvas, fps=30)
     print(f"saved generated video to {save_path}")
