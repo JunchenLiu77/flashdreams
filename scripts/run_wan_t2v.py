@@ -11,6 +11,8 @@ from flashsim.distributed import init as distributed_init
 from flashsim.configs.wan2_1 import WAN2_1_CONFIGS
 from flashsim.pipeline.wan2_1 import ProfileEvents
 
+DEFAULT_TEXT_PROMPT = "A stylish woman strolls down a bustling Tokyo street, the warm glow of neon lights and animated city signs casting vibrant reflections. She wears a sleek black leather jacket paired with a flowing red dress and black boots, her black purse slung over her shoulder. Sunglasses perched on her nose and a bold red lipstick add to her confident, casual demeanor. The street is damp and reflective, creating a mirror-like effect that enhances the colorful lights and shadows. Pedestrians move about, adding to the lively atmosphere. The scene is captured in a dynamic medium shot with the woman walking slightly to one side, highlighting her graceful strides."
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--total_blocks", type=int, default=60, help="Total blocks to generate."
@@ -18,14 +20,15 @@ parser.add_argument(
 parser.add_argument(
     "--overwrite_config_name", type=str, default=None, help="Overwrite config name."
 )
+parser.add_argument(
+    "--prompt", type=str, default=DEFAULT_TEXT_PROMPT, help="Text prompt."
+)
 args = parser.parse_args()
 
 CAMERA_NAMES = ["default"]
 DATA = [
     {
-        "prompt": (
-            "A stylish woman strolls down a bustling Tokyo street, the warm glow of neon lights and animated city signs casting vibrant reflections. She wears a sleek black leather jacket paired with a flowing red dress and black boots, her black purse slung over her shoulder. Sunglasses perched on her nose and a bold red lipstick add to her confident, casual demeanor. The street is damp and reflective, creating a mirror-like effect that enhances the colorful lights and shadows. Pedestrians move about, adding to the lively atmosphere. The scene is captured in a dynamic medium shot with the woman walking slightly to one side, highlighting her graceful strides."
-        ),
+        "prompt": args.prompt,
     }
     for name in CAMERA_NAMES
 ]

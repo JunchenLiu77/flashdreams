@@ -18,6 +18,10 @@ from .network import WanDiTNetwork, WanDiTNetworkCache, WanDiTNetworkConfig
 
 AVAILABLE_WAN2_1_CHECKPOINT_PATHS = {
     "self_forcing": "https://huggingface.co/gdhe17/Self-Forcing/blob/main/checkpoints/self_forcing_dmd.pt",
+    "casual_forcing": {
+        "chunkwise": "https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/chunkwise/causal_forcing.pt",
+        "framewise": "https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/framewise/causal_forcing.pt",
+    },
 }
 
 
@@ -131,6 +135,9 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             # self-forcing checkpoint
             if "generator_ema" in _state_dict:
                 _state_dict = _state_dict["generator_ema"]
+            # casual-forcing checkpoint
+            elif "generator" in _state_dict:
+                _state_dict = _state_dict["generator"]
             state_dict = {}
             for k, v in _state_dict.items():
                 if k.startswith("model."):
@@ -139,6 +146,9 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
                     new_k = k[len("net.") :]
                 else:
                     new_k = k
+                if new_k.startswith("_fsdp_wrapped_module."):
+                    # causal-forcing framewise checkpoint
+                    new_k = new_k[len("_fsdp_wrapped_module.") :]
                 state_dict[new_k] = v
             self.network.load_state_dict(state_dict)
         self.network.update_parameters_after_loading_checkpoint()

@@ -42,3 +42,35 @@ WAN2_1_CONFIGS["self_forcing_lighttae"] = Wan2_1PipelineConfig(
         ),
     ),
 )
+
+
+WAN2_1_CONFIGS["casual_forcing_chunkwise"] = Wan2_1PipelineConfig(
+    detokenizer=WanVAEInterfaceConfig(
+        checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["vae"],
+    ),
+    text_encoder=WanTextEncoderConfig(),
+    dit=WanDiTConfig(
+        checkpoint_path=AVAILABLE_WAN2_1_CHECKPOINT_PATHS["casual_forcing"][
+            "chunkwise"
+        ],
+        network=WanDiTNetworkConfig(
+            patch_embedding_type="conv3d",
+        ),
+    ),
+)
+
+WAN2_1_CONFIGS["casual_forcing_framewise"] = Wan2_1PipelineConfig(
+    detokenizer=WanVAEInterfaceConfig(
+        checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["vae"],
+    ),
+    text_encoder=WanTextEncoderConfig(),
+    dit=WanDiTConfig(
+        checkpoint_path=AVAILABLE_WAN2_1_CHECKPOINT_PATHS["casual_forcing"][
+            "framewise"
+        ],
+        network=WanDiTNetworkConfig(
+            patch_embedding_type="conv3d",
+        ),
+        len_t=1,
+    ),
+)
