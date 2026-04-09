@@ -80,6 +80,13 @@ export HF_TOKEN=<YOUR-HF-TOKEN>
 export HF_HOME=~/.cache/huggingface # default
 
 # 2. Run inference script. Checkpoint will be auto-downloaded at first run from huggingface.
+# - T2V
+PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
+    scripts/run_wan_t2v.py \
+    --total_blocks 21 \
+    --overwrite_config_name casual_forcing_framewise
+    
+# - I2V
 PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
     scripts/run_wan_t2v.py \
     --total_blocks 21 \
