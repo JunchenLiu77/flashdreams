@@ -104,7 +104,7 @@ if torch.distributed.is_initialized():
 
 # streaming inference
 start = 1 if first_frames is not None else 0
-generated_video = [first_frames]
+generated_video = [first_frames] if first_frames is not None else []
 for i in range(start_index, args.total_blocks):
     num_frames = pipeline.get_num_frames(i)
     end = start + num_frames
