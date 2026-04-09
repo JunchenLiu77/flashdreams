@@ -42,14 +42,15 @@ class WanDiTCache:
     len_w: (
         int  # number of tokens along the spatial width dimension after patchification
     )
-    num_tokens_per_chunk: int # number of tokens per chunk after CP
-    batch_size: int # batch size
+    num_tokens_per_chunk: int  # number of tokens per chunk after CP
+    batch_size: int  # batch size
+    num_views: int  # number of views
 
     network_cache: WanDiTNetworkCache
     rope_adapter: RotaryPositionEmbedding3D
 
     # For KV cache update in the end.
-    x0: Tensor | None = None  # clean latent [B, pT, pHW, D]
+    x0: Tensor | None = None  # clean latent [B, V, pT, pHW, D]
     condition: WanDiTCondition | None = None
 
     autoregressive_index: int = -1
@@ -61,14 +62,12 @@ class WanDiTConfig(InstantiateConfig["WanDiT"]):
     _target: type["WanDiT"] = field(default_factory=lambda: WanDiT)
 
     # Network configurations
-    network: WanDiTNetworkConfig = field(
-        default_factory=lambda: WanDiTNetworkConfig()
-    )
+    network: WanDiTNetworkConfig = field(default_factory=lambda: WanDiTNetworkConfig())
     dtype: torch.dtype = torch.bfloat16
 
-    # RoPE: For 720P set to 3.0; for 480P set to 2.0;
-    h_extrapolation_ratio: float = 3.0
-    w_extrapolation_ratio: float = 3.0
+    # RoPE: Default to 1.0 for no extrapolation.
+    h_extrapolation_ratio: float = 1.0
+    w_extrapolation_ratio: float = 1.0
 
     # Difussion schedule
     denoising_timesteps: list[int] = field(
@@ -77,17 +76,17 @@ class WanDiTConfig(InstantiateConfig["WanDiT"]):
     warp_denoising_step: bool = True
 
     # Local attn: Number of tokens along T dimension.
-    window_size_t: int = 8
+    window_size_t: int = 21
     sink_size_t: int = 0
 
     # Chunk size: Number of tokens along T dimension. (after patchification)
-    len_t: int = 4
+    len_t: int = 3
 
     # Checkpoint path
     checkpoint_path: str | None = None
 
     # Noise level for KV cache update.
-    context_noise: int = 128
+    context_noise: int = 0
 
     # Speedup.
     compile_network: bool = True
@@ -130,7 +129,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         if self.config.checkpoint_path is not None:
             _state_dict = load_checkpoint(self.config.checkpoint_path)
             # self-forcing checkpoint
-            if "generator_ema" in _state_dict: 
+            if "generator_ema" in _state_dict:
                 _state_dict = _state_dict["generator_ema"]
             state_dict = {}
             for k, v in _state_dict.items():
@@ -176,8 +175,9 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         self,
         height: int,
         width: int,
-        text_embeddings: Tensor,  # [B, L, D]
-        img_embeddings: Tensor | None = None,  # [B, L, D]
+        text_embeddings: Tensor,  # [B, V, L, D]
+        image_embeddings: Tensor | None = None,  # [B, V, L, D]
+        view_names: list[str] | None = None,
     ) -> WanDiTNetworkCache:
         """
         Initialize the cache for the video DiT.
@@ -185,8 +185,9 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         Args:
             height: The video height after VAE spatial compression.
             width: The video width after VAE spatial compression.
-            text_embeddings: Text embeddings [B, L, D]
-            img_embeddings: CLIP Image embeddings [B, L, D] or None for text-to-video
+            text_embeddings: Text embeddings [B, V, L, D]
+            image_embeddings: CLIP Image embeddings [B, V, L, D] or None for text-to-video
+            view_names: List of view names.
 
         Returns:
             The cache for the video DiT.
@@ -223,7 +224,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             window_size=num_tokens_window_size,
             sink_size=num_tokens_sink_size,
             text_embeddings=text_embeddings,
-            img_embeddings=img_embeddings,
+            img_embeddings=image_embeddings,
         )
 
         cache = WanDiTCache(
@@ -233,6 +234,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             rope_adapter=rope_adapter,
             num_tokens_per_chunk=num_tokens_per_chunk,
             batch_size=text_embeddings.shape[0],
+            num_views=text_embeddings.shape[1],
         )
         cache = self._patchify(cache)
         return cache
@@ -258,9 +260,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         x0 = self._unpatchify(cache.len_h, cache.len_w, x0)
         return x0
 
-    def finalize(
-        self, cache: WanDiTCache, rng: torch.Generator | None = None
-    ) -> None:
+    def finalize(self, cache: WanDiTCache, rng: torch.Generator | None = None) -> None:
         # update kv cache
         timestep = torch.tensor(
             [self.config.context_noise], device=self.device, dtype=self.dtype
@@ -269,7 +269,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
 
     def _predict_x0(
         self,
-        x0: Tensor | None,  # clean latent [B, pT, pHW, D]
+        x0: Tensor | None,  # clean latent [B, V, pT, pHW, D]
         timestep: Tensor,  # [1] or [B]
         condition: WanDiTCondition,
         cache: WanDiTNetworkCache,
@@ -283,6 +283,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             offset=autoregressive_index * self.config.len_t
         )
         batch_size = cache.batch_size
+        num_views = cache.num_views
         len_thw = cache.num_tokens_per_chunk
 
         token_dim = (
@@ -291,7 +292,7 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             * self.config.network.patch_size[1]
             * self.config.network.patch_size[2]
         )
-        input_shape = (batch_size, len_thw, token_dim)
+        input_shape = (batch_size, num_views, len_thw, token_dim)
 
         if x0 is None:
             # pure noise
@@ -372,7 +373,7 @@ if __name__ == "__main__":
         ),
     ).setup(device=device)
 
-    text_embeddings = torch.randn(1, 512, 4096, device=device, dtype=dtype)
+    text_embeddings = torch.randn(1, 1, 512, 4096, device=device, dtype=dtype)
     cache = model.initialize_cache(
         height=720 // 8,
         width=1280 // 8,

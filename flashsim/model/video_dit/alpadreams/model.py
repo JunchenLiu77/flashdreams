@@ -220,7 +220,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         self,
         height: int,
         width: int,
-        encoded_image: Tensor,  # [B, V, 1, C, H, W] after VAE spatial compression
+        image_embeddings: Tensor,  # [B, V, 1, C, H, W] after VAE spatial compression
         text_embeddings: Tensor,  # [B, V, L, D]
         view_names: list[str] | None = None,
     ) -> CosmosDiTNetworkCache:
@@ -272,7 +272,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
 
         view_indices: Tensor | None = None
         if self.config.num_views > 1:
-            batch_size = encoded_image.shape[0]
+            batch_size = image_embeddings.shape[0]
             assert view_names is not None, (
                 "View names must be provided if cross-view attention is enabled"
             )
@@ -287,7 +287,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
                     view_indices, seq_dim=1, cp_group=self.cp_groups.V_group
                 )
 
-        B, V, _, _, H, W = encoded_image.shape
+        B, V, _, _, H, W = image_embeddings.shape
         condition_video_input_mask_first_block = torch.zeros(
             B, V, len_t, 1, H, W, device=self.device, dtype=self.dtype
         )
@@ -297,7 +297,7 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
         )
 
         # TODO: check whether repeat or zero padding is better
-        image = F.pad(encoded_image, (0, 0, 0, 0, 0, 0, 0, len_t - 1))
+        image = F.pad(image_embeddings, (0, 0, 0, 0, 0, 0, 0, len_t - 1))
 
         cache = CosmosDiTCache(
             len_h=len_h,

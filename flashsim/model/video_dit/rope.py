@@ -163,13 +163,16 @@ class RotaryPositionEmbedding3D:
             freqs_t = self.freqs_t + offset * self.raw_freqs_t
             freqs_h = self.freqs_h
             freqs_w = self.freqs_w
-        
+
         if self.interleaved:
-            freqs = torch.cat([
-                freqs_t.repeat_interleave(2, dim=-1), 
-                freqs_h.repeat_interleave(2, dim=-1), 
-                freqs_w.repeat_interleave(2, dim=-1)
-            ], dim=-1)
+            freqs = torch.cat(
+                [
+                    freqs_t.repeat_interleave(2, dim=-1),
+                    freqs_h.repeat_interleave(2, dim=-1),
+                    freqs_w.repeat_interleave(2, dim=-1),
+                ],
+                dim=-1,
+            )
         else:
             freqs = torch.cat([freqs_t, freqs_h, freqs_w] * 2, dim=-1)
         return freqs

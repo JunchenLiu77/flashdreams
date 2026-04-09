@@ -121,7 +121,9 @@ class WanDiTNetwork(nn.Module):
                 stride=self.patch_size,
             )
         else:
-            raise ValueError(f"Invalid patch embedding type: {config.patch_embedding_type}")
+            raise ValueError(
+                f"Invalid patch embedding type: {config.patch_embedding_type}"
+            )
         self.text_embedding = nn.Sequential(
             nn.Linear(self.text_dim, self.dim),
             nn.GELU(approximate="tanh"),
@@ -273,6 +275,7 @@ class WanDiTNetwork(nn.Module):
         Returns:
             ``WanDiTNetworkCache`` containing per-block caches.
         """
+        assert text_embeddings.shape[-2] == self.text_len
         context_text = self.text_embedding(text_embeddings)
         if self.model_type == "i2v":
             assert img_embeddings is not None, (
@@ -378,16 +381,21 @@ class WanDiTNetwork(nn.Module):
         assert self._parameters_updated_after_loading_checkpoint, (
             "We expect to have called update_parameters_after_loading_checkpoint() after loading the checkpoint"
         )
+        batch_shape = x.shape[:-2]
 
         # Patch embedding
         if self.patch_embedding_type == "linear":
             x = self.patch_embedding(x)  # (..., L, D)
         elif self.patch_embedding_type == "conv3d":
-            _weight = self.patch_embedding.weight.reshape(self.dim, -1) # [D, in_dim * kt * kh * kw]
-            _bias = self.patch_embedding.bias # [D] or None
+            _weight = self.patch_embedding.weight.reshape(
+                self.dim, -1
+            )  # [D, in_dim * kt * kh * kw]
+            _bias = self.patch_embedding.bias  # [D] or None
             x = torch.nn.functional.linear(x, _weight, _bias)
         else:
-            raise ValueError(f"Invalid patch embedding type: {self.patch_embedding_type}")
+            raise ValueError(
+                f"Invalid patch embedding type: {self.patch_embedding_type}"
+            )
 
         # Optional HDMap embedding
         if self.additional_concat_ch > 0:
@@ -401,7 +409,7 @@ class WanDiTNetwork(nn.Module):
         e = self.time_embedding(
             sinusoidal_embedding_1d(self.freq_dim, timesteps).type_as(x)
         )  # [..., D]
-        e0 = self.time_projection(e).unflatten(1, (6, self.dim))  # [..., 6, D]
+        e0 = self.time_projection(e).unflatten(-1, (6, self.dim))  # [..., 6, D]
 
         # Transformer blocks
         if eager_mode:
@@ -409,7 +417,7 @@ class WanDiTNetwork(nn.Module):
         for block_idx, block in enumerate(self.blocks):
             x = block(
                 x=x,
-                e=e0,
+                e=torch.broadcast_to(e0, batch_shape + e0.shape[-2:]),
                 rope_freqs=rope_freqs,
                 cache=cache[block_idx],
             )
@@ -417,7 +425,9 @@ class WanDiTNetwork(nn.Module):
             cache.after_update(current_chunk_idx)
 
         # Final head
-        x = self.head(x, e.unsqueeze(1))  # (..., L, D)
+        x = self.head(
+            x, torch.broadcast_to(e, batch_shape + (1, e.shape[-1]))
+        )  # (..., L, D)
         return x
 
 
