@@ -323,7 +323,6 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         else:
             noisy_input = add_noise(x0, alpha, rng=rng)
 
-        # mock predicted flow
         assert noisy_input.shape == input_shape
         predicted_flow = self.network(
             x=noisy_input,

@@ -2,9 +2,11 @@ import re
 from torch import Tensor
 
 
-def remap_checkpoint_keys(state_dict: dict[str, Tensor], mapping: dict[str, str]) -> dict[str, Tensor]:
+def remap_checkpoint_keys(
+    state_dict: dict[str, Tensor], mapping: dict[str, str]
+) -> dict[str, Tensor]:
     r"""Remap checkpoint keys to the new format.
-    
+
     Note: if the key is not in the mapping, it will be kept as is.
 
     Args:

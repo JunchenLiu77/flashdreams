@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-import re
+from typing import Literal
 
 import torch
 from torch import Tensor
@@ -15,7 +15,12 @@ from flashsim.model.video_dit.context_parallel_strategy import (
     HierarchicalCPGroups,
     create_hierarchical_cp_groups,
 )
-from flashsim.model.video_dit.wan2_1.network import WanDiTNetwork, WanDiTNetworkCache, WanDiTNetworkConfig, WanDiTNetwork14BConfig
+from flashsim.model.video_dit.wan2_1.network import (
+    WanDiTNetwork,
+    WanDiTNetworkCache,
+    WanDiTNetworkConfig,
+    WanDiTNetwork14BConfig,
+)
 
 
 AVAILABLE_WAN2_2_CHECKPOINT_PATHS = {
@@ -68,8 +73,12 @@ class WanDiTConfig(InstantiateConfig["WanDiT"]):
     _target: type["WanDiT"] = field(default_factory=lambda: WanDiT)
 
     # Network configurations
-    network_high_noise: WanDiTNetworkConfig = field(default_factory=lambda: WanDiTNetworkConfig())
-    network_low_noise: WanDiTNetworkConfig = field(default_factory=lambda: WanDiTNetworkConfig())
+    network_high_noise: WanDiTNetworkConfig = field(
+        default_factory=lambda: WanDiTNetworkConfig()
+    )
+    network_low_noise: WanDiTNetworkConfig = field(
+        default_factory=lambda: WanDiTNetworkConfig()
+    )
     dtype: torch.dtype = torch.bfloat16
 
     # RoPE: Default to 1.0 for no extrapolation.
@@ -78,9 +87,12 @@ class WanDiTConfig(InstantiateConfig["WanDiT"]):
 
     # Difussion schedule
     denoising_timesteps: list[int] = field(
-        default_factory=lambda: [1000, 750, 500, 250]
+        default_factory=lambda: [1000, 850, 700, 550, 350, 275, 200, 125],
     )
     warp_denoising_step: bool = True
+
+    # Where to switch between high and low noise networks
+    boundary_ratio: float = 0.875
 
     # Local attn: Number of tokens along T dimension.
     window_size_t: int = 21
@@ -100,7 +112,6 @@ class WanDiTConfig(InstantiateConfig["WanDiT"]):
     compile_network: bool = True
 
 
-
 class WanDiT(BaseVideoDiT[WanDiTCache]):
     """
     Wan DiT for video generation.
@@ -116,7 +127,6 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         r"^condition_embedder\.time_proj\.(.*)$": r"time_projection.1.\1",
         r"^scale_shift_table$": r"head.modulation",
         r"^proj_out\.(.*)$": r"head.head.\1",
-
         # Block attention projections
         r"^blocks\.(\d+)\.attn1\.to_q\.(.*)$": r"blocks.\1.self_attn.q.\2",
         r"^blocks\.(\d+)\.attn1\.to_k\.(.*)$": r"blocks.\1.self_attn.k.\2",
@@ -126,7 +136,6 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         r"^blocks\.(\d+)\.attn2\.to_k\.(.*)$": r"blocks.\1.cross_attn.k.\2",
         r"^blocks\.(\d+)\.attn2\.to_v\.(.*)$": r"blocks.\1.cross_attn.v.\2",
         r"^blocks\.(\d+)\.attn2\.to_out\.0\.(.*)$": r"blocks.\1.cross_attn.o.\2",
-
         # Block norm/modulation remaps
         r"^blocks\.(\d+)\.attn1\.norm_q\.(.*)$": r"blocks.\1.self_attn.norm_q.\2",
         r"^blocks\.(\d+)\.attn1\.norm_k\.(.*)$": r"blocks.\1.self_attn.norm_k.\2",
@@ -134,7 +143,6 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         r"^blocks\.(\d+)\.attn2\.norm_k\.(.*)$": r"blocks.\1.cross_attn.norm_k.\2",
         r"^blocks\.(\d+)\.norm2\.(.*)$": r"blocks.\1.norm3.\2",
         r"^blocks\.(\d+)\.scale_shift_table$": r"blocks.\1.modulation",
-
         # Block FFN remaps
         r"^blocks\.(\d+)\.ffn\.fc_in\.(.*)$": r"blocks.\1.ffn.0.\2",
         r"^blocks\.(\d+)\.ffn\.fc_out\.(.*)$": r"blocks.\1.ffn.2.\2",
@@ -177,29 +185,29 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
             )
             if checkpoint_path is not None:
                 _state_dict = load_checkpoint(checkpoint_path)
-                state_dict = remap_checkpoint_keys(_state_dict, self.CHECKPOINT_KEY_MAPPING)
+                state_dict = remap_checkpoint_keys(
+                    _state_dict, self.CHECKPOINT_KEY_MAPPING
+                )
                 network.load_state_dict(state_dict)
             network.update_parameters_after_loading_checkpoint()
             if compile_network:
-                network = torch.compile(
-                    network, mode="max-autotune-no-cudagraphs"
-                )
+                network = torch.compile(network, mode="max-autotune-no-cudagraphs")
             return network
-            
+
         self.network_high_noise = setup_network(
-            self.config.network_high_noise, 
-            self.config.checkpoint_path_high_noise, 
+            self.config.network_high_noise,
+            self.config.checkpoint_path_high_noise,
             self.config.compile_network,
         )
         self.network_low_noise = setup_network(
-            self.config.network_low_noise, 
-            self.config.checkpoint_path_low_noise, 
+            self.config.network_low_noise,
+            self.config.checkpoint_path_low_noise,
             self.config.compile_network,
         )
 
         # define scheduler
         num_train_timestep = 1000
-        self.boundary = 0.875 * num_train_timestep
+        self.boundary = self.config.boundary_ratio * num_train_timestep
         self.scheduler = FlowMatchScheduler(
             shift=5.0, sigma_min=0.0, extra_one_step=True
         )
@@ -244,12 +252,14 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         Returns:
             The cache for the video DiT.
         """
+        network_config = self.config.network_high_noise
+
         # compute size of the tokens after patchification
         len_t = self.config.len_t
-        len_h = height // self.config.network.patch_size[1]
-        len_w = width // self.config.network.patch_size[2]
+        len_h = height // network_config.patch_size[1]
+        len_w = width // network_config.patch_size[2]
 
-        head_dim = self.config.network.dim // self.config.network.num_heads
+        head_dim = network_config.dim // network_config.num_heads
         rope_adapter = RotaryPositionEmbedding3D(
             len_t=len_t,
             len_h=len_h,
@@ -334,7 +344,22 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         if context_noise is None:
             context_noise = self.config.context_noise
         timestep = torch.tensor([context_noise], device=self.device, dtype=self.dtype)
-        _ = self._predict_x0(cache.x0, timestep, cache.condition, cache, rng=rng)
+        _ = self._predict_x0(
+            cache.x0,
+            timestep,
+            cache.condition,
+            cache,
+            rng=rng,
+            network_choice="high_noise",
+        )
+        _ = self._predict_x0(
+            cache.x0,
+            timestep,
+            cache.condition,
+            cache,
+            rng=rng,
+            network_choice="low_noise",
+        )
 
     def _predict_x0(
         self,
@@ -343,7 +368,10 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         condition: WanDiTCondition,
         cache: WanDiTNetworkCache,
         rng: torch.Generator | None = None,
+        network_choice: Literal["high_noise", "low_noise", "auto"] = "auto",
     ) -> Tensor:
+        network_config = self.config.network_high_noise
+
         autoregressive_index = cache.autoregressive_index
         assert autoregressive_index >= 0, "Index must be updated before predicting flow"
         alpha = self.scheduler.timestep_to_sigma(timestep)
@@ -356,10 +384,10 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         len_thw = cache.num_tokens_per_chunk
 
         token_dim = (
-            self.config.network.in_dim
-            * self.config.network.patch_size[0]
-            * self.config.network.patch_size[1]
-            * self.config.network.patch_size[2]
+            network_config.in_dim
+            * network_config.patch_size[0]
+            * network_config.patch_size[1]
+            * network_config.patch_size[2]
         )
         input_shape = (batch_size, num_views, len_thw, token_dim)
 
@@ -371,11 +399,21 @@ class WanDiT(BaseVideoDiT[WanDiTCache]):
         else:
             noisy_input = add_noise(x0, alpha, rng=rng)
 
-        # mock predicted flow
         assert noisy_input.shape == input_shape
-        is_high_noise = timestep[0] > self.boundary
-        network = self.network_high_noise if is_high_noise else self.network_low_noise
-        network_cache = cache.network_cache_high_noise if is_high_noise else cache.network_cache_low_noise
+
+        if network_choice == "auto":
+            is_high_noise = timestep[0] > self.boundary
+            network_choice = "high_noise" if is_high_noise else "low_noise"
+
+        if network_choice == "high_noise":
+            network = self.network_high_noise
+            network_cache = cache.network_cache_high_noise
+        elif network_choice == "low_noise":
+            network = self.network_low_noise
+            network_cache = cache.network_cache_low_noise
+        else:
+            raise ValueError(f"Invalid network choice: {network_choice}")
+
         predicted_flow = network(
             x=noisy_input,
             timesteps=timestep,
@@ -439,8 +477,12 @@ if __name__ == "__main__":
     dtype = torch.bfloat16
 
     model = WanDiTConfig(
-        checkpoint_path_high_noise=AVAILABLE_WAN2_2_CHECKPOINT_PATHS["fastvideo-i2v"]["high_noise"],
-        checkpoint_path_low_noise=AVAILABLE_WAN2_2_CHECKPOINT_PATHS["fastvideo-i2v"]["low_noise"],
+        checkpoint_path_high_noise=AVAILABLE_WAN2_2_CHECKPOINT_PATHS["fastvideo-i2v"][
+            "high_noise"
+        ],
+        checkpoint_path_low_noise=AVAILABLE_WAN2_2_CHECKPOINT_PATHS["fastvideo-i2v"][
+            "low_noise"
+        ],
         network_high_noise=WanDiTNetwork14BConfig(
             patch_embedding_type="conv3d",
         ),
@@ -449,14 +491,14 @@ if __name__ == "__main__":
         ),
     ).setup(device=device)
 
-    # text_embeddings = torch.randn(1, 1, 512, 4096, device=device, dtype=dtype)
-    # cache = model.initialize_cache(
-    #     height=720 // 8,
-    #     width=1280 // 8,
-    #     text_embeddings=text_embeddings,
-    # )
+    text_embeddings = torch.randn(1, 1, 512, 4096, device=device, dtype=dtype)
+    cache = model.initialize_cache(
+        height=720 // 8,
+        width=1280 // 8,
+        text_embeddings=text_embeddings,
+    )
 
-    # with torch.no_grad():
-    #     cache.autoregressive_index = 0
-    #     video = model.generate(condition=WanDiTCondition(), cache=cache)
-    # print(video.shape)
+    with torch.no_grad():
+        cache.autoregressive_index = 0
+        video = model.generate(condition=WanDiTCondition(), cache=cache)
+    print(video.shape)

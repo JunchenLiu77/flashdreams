@@ -388,7 +388,6 @@ class CosmosDiT(BaseVideoDiT[CosmosDiTCache]):
             image_latent = cache.image
             noisy_input.mul_(1.0 - mask).add_(image_latent * mask)
 
-        # mock predicted flow
         assert noisy_input.shape == input_shape
         predicted_flow = self.network(
             x=noisy_input,
