@@ -62,6 +62,26 @@ class WanDiTNetworkConfig(InstantiateConfig["WanDiTNetwork"]):
     patch_embedding_type: Literal["linear", "conv3d"] = "linear"
 
 
+@dataclass
+class WanDiTNetwork1pt3BConfig(WanDiTNetworkConfig):
+    """Configuration for the 1.3B Wan DiT network."""
+
+    dim: int = 1536
+    ffn_dim: int = 8960
+    num_heads: int = 12
+    num_layers: int = 30
+
+
+@dataclass
+class WanDiTNetwork14BConfig(WanDiTNetworkConfig):
+    """Configuration for the 14B Wan DiT network."""
+
+    dim: int = 5120
+    ffn_dim: int = 13824
+    num_heads: int = 40
+    num_layers: int = 40
+
+
 class WanDiTNetwork(nn.Module):
     """WAN diffusion backbone for text-to-video and image-to-video."""
 
