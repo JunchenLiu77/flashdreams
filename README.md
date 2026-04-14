@@ -96,7 +96,7 @@ PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
 ```
 
 
-## Instructions to run FastVideo Wan2.2 Causal I2V Inference.
+## Instructions to run FastVideo Wan2.2 Causal T2V and I2V Inference.
 reference: [FastVideo official inference script](https://github.com/hao-ai-lab/FastVideo/blob/main/examples/inference/basic/basic_self_forcing_causal_wan2_2_i2v.py)
 
 ```bash
@@ -109,8 +109,15 @@ export HF_TOKEN=<YOUR-HF-TOKEN>
 export HF_HOME=~/.cache/huggingface # default
 
 # 2. Run inference script. Checkpoint will be auto-downloaded at first run from huggingface.
-# - T2V (note: this is abuse I2V checkpoint to do T2V generation)
+# - T2V
 PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
     scripts/run_wan2_2_i2v.py \
     --total_blocks 21
+
+# # - I2V (not supported yet)
+# PYTHONPATH=. torchrun   --standalone   --nnodes=1   --nproc_per_node=1 \
+#     scripts/run_wan2_2_i2v.py \
+#     --total_blocks 21 \
+#     --prompt_or_txt_path assets/example_data/i2v/prompt.txt  \
+#     --image_path assets/example_data/i2v/image.jpg
 ```
