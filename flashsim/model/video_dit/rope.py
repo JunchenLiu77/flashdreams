@@ -1,3 +1,4 @@
+from typing import TypeVar
 import torch
 from einops import repeat
 from torch import Tensor
@@ -7,9 +8,17 @@ from torch.distributed.tensor.device_mesh import DeviceMesh
 from flashsim.distributed.context_parallel import split_inputs_cp
 
 try:
-    from transformer_engine.pytorch.attention.rope import apply_rotary_pos_emb
+    from transformer_engine.pytorch.attention.rope import apply_rotary_pos_emb  # type: ignore[import-untyped]
 except ImportError:
-    from transformer_engine.pytorch.attention import apply_rotary_pos_emb
+    from transformer_engine.pytorch.attention import apply_rotary_pos_emb  # type: ignore[import-untyped]
+
+T = TypeVar("T")
+
+
+def unpack_optional(maybe_object: T | None) -> T:
+    if maybe_object is None:
+        raise ValueError("Expected a non-None object")
+    return maybe_object
 
 
 def _compute_freqs(
@@ -156,9 +165,9 @@ class RotaryPositionEmbedding3D:
             where L is the sequence length T * H * W. The memory layout is (T, H, W).
         """
         if self.is_context_parallel_enabled():
-            freqs_t = self.freqs_t_cp + offset * self.raw_freqs_t
-            freqs_h = self.freqs_h_cp
-            freqs_w = self.freqs_w_cp
+            freqs_t = unpack_optional(self.freqs_t_cp) + offset * self.raw_freqs_t
+            freqs_h = unpack_optional(self.freqs_h_cp)
+            freqs_w = unpack_optional(self.freqs_w_cp)
         else:
             freqs_t = self.freqs_t + offset * self.raw_freqs_t
             freqs_h = self.freqs_h

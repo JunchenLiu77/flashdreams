@@ -216,7 +216,7 @@ class CosmosReason1TextEncoder(BaseTextEncoder):
 
 
 if __name__ == "__main__":
-    text_encoder = CosmosReason1TextEncoder()
+    text_encoder = CosmosReason1TextEncoder(config=CosmosReason1TextEncoderConfig())
 
     text = ["A beautiful sunset over a calm ocean."]
     text_embeddings = text_encoder.encode(text)

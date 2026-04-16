@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TypeVar
 
 import torch
 from torch import Tensor
@@ -85,9 +85,12 @@ def cat_outputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
     return torch.cat(gathered_tensors, dim=seq_dim)
 
 
+T = TypeVar("T")
+
+
 def split_inputs_cp_object_list(
-    object_list: list[Any], cp_group: ProcessGroup
-) -> list[Any]:
+    object_list: list[T], cp_group: ProcessGroup
+) -> list[T]:
     """
     Split input object list for context parallelism.
 
@@ -115,9 +118,7 @@ def split_inputs_cp_object_list(
     return object_list[start_idx:end_idx]
 
 
-def cat_outputs_cp_object_list(
-    object_list: list[Any], cp_group: ProcessGroup
-) -> list[Any]:
+def cat_outputs_cp_object_list(object_list: list[T], cp_group: ProcessGroup) -> list[T]:
     """
     Concatenate outputs from different ranks in the context parallelism group.
 
@@ -134,14 +135,14 @@ def cat_outputs_cp_object_list(
     # Get the world size (number of processes in the group)
     world_size = get_world_size(cp_group)
 
-    # Create a list to store tensors from all ranks
-    gathered_object_list: list[list[Any] | None] = [None for _ in range(world_size)]
+    # Create a list to store objects from all ranks
+    gathered_object_list: list[list[T]] = [[] for _ in range(world_size)]
 
-    # Gather tensors from all ranks
+    # Gather objects from all ranks
     try:
         all_gather_object(gathered_object_list, object_list, group=cp_group)
     except RuntimeError as e:
-        raise RuntimeError("Failed to gather tensors") from e
+        raise RuntimeError("Failed to gather objects") from e
 
     # `all_gather_object` is treating `object_list` as a single object.
     # since we are passing in a list, the resulted `gathered_object_list` would be

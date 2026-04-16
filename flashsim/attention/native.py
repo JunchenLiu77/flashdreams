@@ -109,8 +109,12 @@ class NativeAttention(torch.nn.Module):
                 _dummy = torch.empty(self.device_mesh.size(), device=query.device)
                 with torch.distributed.tensor.experimental.context_parallel(
                     self.device_mesh,
-                    buffers=(_dummy,),
-                    buffer_seq_dims=(0,),
+                    buffers=[
+                        _dummy,
+                    ],
+                    buffer_seq_dims=[
+                        0,
+                    ],
                     no_restore_buffers={_dummy},
                 ):
                     out = F.scaled_dot_product_attention(query, key, value)

@@ -1,4 +1,5 @@
-from typing import Literal
+from contextlib import nullcontext
+from typing import ContextManager, Literal
 
 import torch
 import torch.distributed._functional_collectives as funcol
@@ -10,7 +11,7 @@ from .native import NativeAttention
 
 def torch_sdpa_cudnn(
     query: Tensor, key: Tensor, value: Tensor, return_lse: bool = False
-) -> tuple[Tensor, Tensor] | Tensor:
+) -> tuple[Tensor, Tensor | None]:
     """Scaled dot-product attention via CuDNN backend (supports LSE for ring merge).
 
     Args:
@@ -29,12 +30,12 @@ def torch_sdpa_cudnn(
         attn_bias=None,
         compute_log_sumexp=True,
     )
-    return (out, lse) if return_lse else out
+    return out, (lse if return_lse else None)
 
 
 def torch_sdpa_flash(
     query: Tensor, key: Tensor, value: Tensor, return_lse: bool = False
-) -> tuple[Tensor, Tensor] | Tensor:
+) -> tuple[Tensor, Tensor | None]:
     """Scaled dot-product attention via Flash Attention backend (returns LSE for ring merge).
 
     Args:
@@ -51,7 +52,7 @@ def torch_sdpa_flash(
         key=key,
         value=value,
     )
-    return (out, lse) if return_lse else out
+    return out, (lse if return_lse else None)
 
 
 class RingAttention(NativeAttention):
@@ -98,20 +99,22 @@ class RingAttention(NativeAttention):
         }[self.backend]
 
         if self.device_mesh is None:
-            return attn_op(query, key, value, return_lse=False)
+            return attn_op(query, key, value, return_lse=False)[0]
 
         rank = self.device_mesh.get_rank()
         world_size = self.device_mesh.size()
         group = self.device_mesh.get_group()
         if world_size == 1:
-            return attn_op(query, key, value, return_lse=False)
+            return attn_op(query, key, value, return_lse=False)[0]
 
         next_rank = (rank + 1) % world_size
         prev_out = prev_lse = None
 
-        kv_buffer = torch.cat([key.flatten(), value.flatten()]).contiguous()
-        kv_buffer = funcol.all_gather_tensor(kv_buffer, gather_dim=0, group=group)
-        kv_buffer = kv_buffer.chunk(world_size)
+        kv_buffer_local = torch.cat([key.flatten(), value.flatten()]).contiguous()
+        kv_buffer_gathered = funcol.all_gather_tensor(
+            kv_buffer_local, gather_dim=0, group=group
+        )
+        kv_buffer = kv_buffer_gathered.chunk(world_size)
 
         for i in range(world_size):
             if i > 0:
@@ -121,16 +124,25 @@ class RingAttention(NativeAttention):
                 next_rank = (next_rank + 1) % world_size
 
             out, lse = attn_op(query, key, value, return_lse=True)
+            if lse is None:
+                raise AssertionError("LSE is None")
 
+            precision_context: ContextManager[None]
             if self.convert_to_fp32:
-                out = out.to(torch.float32)
-                lse = lse.to(torch.float32)
+                precision_context = torch.autocast(device_type="cuda", enabled=False)
+            else:
+                precision_context = nullcontext()
 
-            if prev_out is not None:
-                out = prev_out - torch.nn.functional.sigmoid(lse - prev_lse) * (
-                    prev_out - out
-                )
-                lse = prev_lse - torch.nn.functional.logsigmoid(prev_lse - lse)
+            with precision_context:
+                if self.convert_to_fp32:
+                    out = out.to(torch.float32)
+                    lse = lse.to(torch.float32)
+
+                if prev_out is not None and prev_lse is not None:
+                    out = prev_out - torch.nn.functional.sigmoid(lse - prev_lse) * (
+                        prev_out - out
+                    )
+                    lse = prev_lse - torch.nn.functional.logsigmoid(prev_lse - lse)
             prev_out = out
             prev_lse = lse
 

@@ -33,10 +33,12 @@ class InstantiateConfig(Generic[T], PrintableConfig):
 
     def setup(self, **kwargs: Any) -> T:
         """Returns the instantiated object using the config."""
-        return self._target(self, **kwargs)
+        return self._target(self, **kwargs)  # type: ignore[call-arg]
 
 
-def derive_conifg(base_config, **changes):
+def derive_config(
+    base_config: InstantiateConfig[T], **changes: Any
+) -> InstantiateConfig[T]:
     """
     Derive a new config from a base config by applying changes.
 
@@ -50,7 +52,7 @@ def derive_conifg(base_config, **changes):
         >>>     ),
         >>> )
 
-        >>> new_config = derive_conifg(
+        >>> new_config = derive_config(
         >>>     base_config,
         >>>     tokenizer=WanVAEInterfaceConfig(
         >>>         checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["lightvae"],

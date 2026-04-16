@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 import math
 import os
 import torch
 from torch import Tensor
 
 from transformers import CLIPImageProcessor, CLIPVisionModel
+from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 from flashsim.config import InstantiateConfig
 
@@ -15,8 +16,8 @@ class WanImageEncoderConfig(InstantiateConfig["WanImageEncoder"]):
     _target: type["WanImageEncoder"] = field(default_factory=lambda: WanImageEncoder)
 
     model_id_or_local_path: Literal[
-        "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
-        "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"
+        "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
+        "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
         "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
     ] = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
     dtype: torch.dtype = torch.bfloat16
@@ -58,12 +59,20 @@ class WanImageEncoder:
 
         device = self.image_encoder.device
         images = (images + 1) / 2.0
-        images = self.image_processor(
-            images=images.to(dtype=torch.float32), return_tensors="pt", do_rescale=False
+        images = cast(
+            Tensor,
+            self.image_processor(
+                images=images.to(dtype=torch.float32),
+                return_tensors="pt",
+                do_rescale=False,
+            ),
         ).to(device, dtype=self.image_encoder.dtype)
-        image_embeds = self.image_encoder(**images, output_hidden_states=True)
+        image_embeds: BaseModelOutputWithPooling = self.image_encoder(
+            **images, output_hidden_states=True
+        )
 
-        output = image_embeds.hidden_states[-2]
+        assert image_embeds.hidden_states is not None
+        output: Tensor = image_embeds.hidden_states[-2]
         output = output.reshape(*batch_shape, *output.shape[-2:])
         return output
 

@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Self
 
 import torch
 from torch import Tensor
@@ -71,14 +72,14 @@ class BlockKVCache:
     _n_cached: int = 0
     """Number of valid tokens currently in the cache."""
 
-    _k: Tensor | None = None
+    _k: Tensor = field(init=False)
     """Cached keys. shape ``[..., total_size, ..., Dk]``, where the ``total_size`` is the length of the cache buffer at ``seq_dim`` dimension."""
 
-    _v: Tensor | None = None
+    _v: Tensor = field(init=False)
     """Cached values. shape ``[..., total_size, ..., Dv]``, where the ``total_size`` is the length of the cache buffer at ``seq_dim`` dimension."""
 
     @classmethod
-    def from_tensor(cls, k: Tensor, v: Tensor, seq_dim: int) -> "BlockKVCache":
+    def from_tensor(cls, k: Tensor, v: Tensor, seq_dim: int) -> Self:
         cache = cls(
             k_shape=k.shape,
             v_shape=v.shape,

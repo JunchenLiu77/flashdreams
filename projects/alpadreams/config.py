@@ -1,4 +1,4 @@
-from flashsim.config import derive_conifg
+from flashsim.config import derive_config
 from projects.alpadreams.pipeline import AlpadreamsPipelineConfig
 from flashsim.model.video_vae.wan import (
     WanVAEInterfaceConfig,
@@ -47,7 +47,7 @@ ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_lightvae_lighttae"] = (
     )
 )
 
-ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_vae_vae"] = derive_conifg(
+ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_vae_vae"] = derive_config(
     ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_lightvae_lighttae"],
     tokenizer=WanVAEInterfaceConfig(
         checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["vae"],
@@ -58,7 +58,7 @@ ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_vae_vae"] = derive_conifg(
 )
 
 
-ALPADREAMS_CONFIGS["sv_2steps_chunk3_loc6_vae_vae"] = derive_conifg(
+ALPADREAMS_CONFIGS["sv_2steps_chunk3_loc6_vae_vae"] = derive_config(
     ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_lightvae_lighttae"],
     tokenizer=WanVAEInterfaceConfig(
         checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["vae"],
@@ -74,7 +74,7 @@ ALPADREAMS_CONFIGS["sv_2steps_chunk3_loc6_vae_vae"] = derive_conifg(
     ),
 )
 
-ALPADREAMS_CONFIGS["sv_2steps_chunk4_loc8_pshuffle_lighttae"] = derive_conifg(
+ALPADREAMS_CONFIGS["sv_2steps_chunk4_loc8_pshuffle_lighttae"] = derive_config(
     ALPADREAMS_CONFIGS["sv_2steps_chunk2_loc6_lightvae_lighttae"],
     tokenizer=PixelShuffleVAEInterfaceConfig(),
     detokenizer=TeahvInterfaceConfig(

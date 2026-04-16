@@ -125,6 +125,7 @@ class WanDiTNetwork(nn.Module):
 
         # Embedding layers
         in_dim = config.in_dim + 1 if self.concat_padding_mask else config.in_dim
+        self.patch_embedding: nn.Linear | nn.Conv3d
         if config.patch_embedding_type == "linear":
             self.patch_embedding = nn.Linear(
                 in_dim * self.patch_size[0] * self.patch_size[1] * self.patch_size[2],
