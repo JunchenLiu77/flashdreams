@@ -34,6 +34,10 @@ streaming = [
     "pillow==11.1.0",
     "websockets==14.2",
 ]
+# Optional: ``python -m projects.streaming_ws client --show-window`` for OpenCV preview.
+streaming_viewer = [
+    "opencv-python==4.10.0.84",
+]
 
 [tool.setuptools.packages.find]
 exclude = ["tests"]

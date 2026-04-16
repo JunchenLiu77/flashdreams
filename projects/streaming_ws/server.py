@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import socket
 from dataclasses import dataclass
 
 from websockets.asyncio.server import ServerConnection, serve
@@ -130,6 +131,90 @@ async def _handle_connection(conn: ServerConnection, cfg: ServerConfig) -> None:
             await reader
 
 
+def _discover_ipv4_for_remote_urls() -> list[str]:
+    """Return non-loopback IPv4s to print as ``ws://`` hints (stdlib only, best-effort).
+
+    Order: first the address chosen by the OS for a UDP "route" probe (often the
+    active LAN interface), then any extra IPv4s from ``gethostbyname_ex``.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(ip: str) -> None:
+        ip = ip.strip()
+        if not ip or ip in seen or ip.startswith("127."):
+            return
+        seen.add(ip)
+        out.append(ip)
+
+    # Pick the source IPv4 the kernel would use toward the wider internet.
+    for probe in ("8.8.8.8", "192.0.2.1", "198.51.100.1"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect((probe, 80))
+                add(s.getsockname()[0])
+            finally:
+                s.close()
+            break
+        except OSError:
+            continue
+
+    for name_fn in (socket.getfqdn, socket.gethostname):
+        try:
+            _hn, _alias, ips = socket.gethostbyname_ex(name_fn())
+            for ip in ips:
+                add(ip)
+        except OSError:
+            continue
+
+    return out
+
+
+def _log_listen_ready(cfg: ServerConfig, server: object) -> None:
+    """Print bind addresses once the asyncio listener is up (after ``serve`` enters)."""
+    socks_attr = getattr(server, "sockets", None)
+    socks = list(socks_attr) if socks_attr is not None else []
+    print(
+        f"[server] WebSocket ready — config host={cfg.host!r} port={cfg.port}",
+        flush=True,
+    )
+    for sock in socks:
+        try:
+            addr = sock.getsockname()
+        except OSError:
+            continue
+        fam = sock.family
+        if fam == socket.AF_INET:
+            ip, port = addr[0], addr[1]
+            print(f"[server]   listen IP:port = {ip}:{port}", flush=True)
+        elif fam == socket.AF_INET6:
+            host, port = addr[0], addr[1]
+            print(f"[server]   listen IP:port = [{host}]:{port}", flush=True)
+        else:
+            print(f"[server]   listen socket = {addr!r}", flush=True)
+    if cfg.host in ("0.0.0.0", "", "::", "[::]"):
+        print(
+            f"[server]   example client URL (this host): ws://127.0.0.1:{cfg.port}",
+            flush=True,
+        )
+        guessed = _discover_ipv4_for_remote_urls()
+        if guessed:
+            for ip in guessed:
+                print(
+                    f"[server]   remote client URL (auto): ws://{ip}:{cfg.port}",
+                    flush=True,
+                )
+        else:
+            print(
+                "[server]   could not auto-detect a non-loopback IPv4 "
+                "(offline or unusual network); try `hostname -I` or `ip -br a` on Linux",
+                flush=True,
+            )
+    else:
+        print(f"[server]   connect URL: ws://{cfg.host}:{cfg.port}", flush=True)
+
+
 async def run_server(cfg: ServerConfig) -> None:
     """Listen until cancelled (Ctrl+C under ``asyncio.run``)."""
 
@@ -143,7 +228,8 @@ async def run_server(cfg: ServerConfig) -> None:
         # Pre-compressed images: disable permessage-deflate (CPU + latency).
         compression=None,
         max_size=cfg.max_ws_message_bytes,
-    ):
+    ) as server:
+        _log_listen_ready(cfg, server)
         # Block forever until SIGINT cancels the process / event loop.
         await asyncio.Future()
 

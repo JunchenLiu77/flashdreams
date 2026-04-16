@@ -4,10 +4,14 @@ Pipeline (after connect)::
 
     recv_loop  -> incoming Queue (batch_id, frames, recv_mono)
     sender_loop -> periodic CTRL (overlaps server work with local playout)
-    run_playout -> fixed-FPS ticks; optional on_frame logging / profiling
+    run_playout -> fixed-FPS ticks; optional on_frame (console log and/or OpenCV window)
 
 ``recv_mono`` pairs with server ``batch_id`` so the client can measure
 queue+playout delay for the first frame of each batch.
+
+**Visual preview (laptop):** install ``opencv-python`` (extra ``streaming_viewer``) and pass
+``--show-window``. Requires a local display (X11/Wayland on Linux, desktop on macOS/Windows);
+headless SSH without forwarding will not show a window.
 """
 
 from __future__ import annotations
@@ -44,6 +48,20 @@ class ClientConfig:
     verbose_profile: bool = True
     # Log one line per mock display tick (UTC wall clock + batch / frame).
     log_every_frame: bool = True
+    # Pop an OpenCV window and decode each WebP (needs ``pip install .[streaming_viewer]``).
+    show_window: bool = False
+    window_name: str = "streaming_ws"
+
+
+def _ensure_opencv() -> None:
+    try:
+        import cv2  # noqa: F401
+    except ImportError as e:
+        raise RuntimeError(
+            "show_window=True requires opencv-python. "
+            "Install: pip install 'opencv-python>=4.8' "
+            "or pip install -e '.[streaming_viewer]'"
+        ) from e
 
 
 def _make_on_display(*, frames_per_batch: int) -> Any:
@@ -75,6 +93,44 @@ def _make_on_display(*, frames_per_batch: int) -> Any:
         print(line, flush=True)
 
     return on_display
+
+
+def _make_on_frame(
+    cfg: ClientConfig,
+    *,
+    window_created: list[bool],
+) -> Any | None:
+    """Combine optional console logging and optional OpenCV preview (same playout tick)."""
+    log_fn = (
+        _make_on_display(frames_per_batch=cfg.frames_per_batch)
+        if cfg.log_every_frame
+        else None
+    )
+    if log_fn is None and not cfg.show_window:
+        return None
+
+    async def on_frame(
+        *,
+        batch_id: int,
+        frame_index: int,
+        jpeg: bytes,
+        held: bool,
+    ) -> None:
+        if log_fn is not None:
+            await log_fn(
+                batch_id=batch_id, frame_index=frame_index, jpeg=jpeg, held=held
+            )
+        if cfg.show_window:
+            from projects.streaming_ws.opencv_viewer import show_webp_in_window
+
+            await asyncio.to_thread(
+                show_webp_in_window,
+                jpeg,
+                window_name=cfg.window_name,
+                window_created=window_created,
+            )
+
+    return on_frame
 
 
 async def run_client(cfg: ClientConfig) -> dict[str, Any]:
@@ -137,11 +193,10 @@ async def run_client(cfg: ClientConfig) -> dict[str, Any]:
         # e.g. non-main thread: rely on KeyboardInterrupt + duration_s instead.
         pass
 
-    on_frame = (
-        _make_on_display(frames_per_batch=cfg.frames_per_batch)
-        if cfg.log_every_frame
-        else None
-    )
+    if cfg.show_window:
+        _ensure_opencv()
+    window_created = [False]
+    on_frame = _make_on_frame(cfg, window_created=window_created)
 
     t0 = time.perf_counter()
     try:
@@ -177,6 +232,10 @@ async def run_client(cfg: ClientConfig) -> dict[str, Any]:
             with contextlib.suppress(asyncio.CancelledError):
                 await recv_task
     finally:
+        if cfg.show_window:
+            from projects.streaming_ws.opencv_viewer import destroy_viewer_window
+
+            destroy_viewer_window()
         if sig_installed:
             with contextlib.suppress(ValueError, NotImplementedError, RuntimeError):
                 loop.remove_signal_handler(signal.SIGINT)
@@ -213,6 +272,11 @@ def main_client(cfg: ClientConfig) -> None:
         print(
             "[client] duration_s=None — run until Ctrl+C (SIGINT); "
             "summary prints after clean stop.",
+            flush=True,
+        )
+    if cfg.show_window:
+        print(
+            f"[client] OpenCV window '{cfg.window_name}' — close window or Ctrl+C to stop.",
             flush=True,
         )
     try:
