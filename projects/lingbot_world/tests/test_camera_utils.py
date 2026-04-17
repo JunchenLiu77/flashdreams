@@ -1,21 +1,10 @@
 import torch
 
 import numpy as np
-from projects.lingbot_world.camera_utils import SE3_inverse, compute_relative_poses
-
-
-def compute_relative_poses_causal(
-    c2ws_mat: torch.Tensor,
-    trans_normalizer: float = 1.0,
-    ref_pose: torch.Tensor | None = None,
-) -> torch.Tensor:
-    if ref_pose is None:
-        ref_pose = c2ws_mat[0:1]
-    assert ref_pose.shape == (1, 4, 4)
-    c2ws_mat = torch.cat([ref_pose, c2ws_mat], dim=0)
-    relative_poses = torch.bmm(SE3_inverse(c2ws_mat[:-1]), c2ws_mat[1:])
-    relative_poses[:, :3, 3] /= trans_normalizer
-    return relative_poses
+from projects.lingbot_world.camera_utils import (
+    compute_relative_poses,
+    compute_relative_poses_causal,
+)
 
 
 def test_compute_relative_poses_causal():

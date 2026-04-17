@@ -2,15 +2,14 @@ import torch
 
 
 def SE3_inverse(T: torch.Tensor) -> torch.Tensor:
-    Rot = T[:, :3, :3]  # [B,3,3]
-    trans = T[:, :3, 3:]  # [B,3,1]
+    batch_shape = T.shape[:-2]
+    Rot = T[..., :3, :3]  # [..., 3, 3]
+    trans = T[..., :3, 3:]  # [..., 3, 1]
     R_inv = Rot.transpose(-1, -2)
     t_inv = -torch.bmm(R_inv, trans)
-    T_inv = torch.eye(4, device=T.device, dtype=T.dtype)[None, :, :].repeat(
-        T.shape[0], 1, 1
-    )
-    T_inv[:, :3, :3] = R_inv
-    T_inv[:, :3, 3:] = t_inv
+    T_inv = torch.eye(4, device=T.device, dtype=T.dtype).repeat(*batch_shape, 1, 1)
+    T_inv[..., :3, :3] = R_inv
+    T_inv[..., :3, 3:] = t_inv
     return T_inv
 
 
@@ -94,3 +93,19 @@ def get_plucker_embeddings(
             [n_frames, height, width, 6]
         )  # [f*h*w, 6]
     return plucker_embeddings
+
+
+def compute_relative_poses_causal(
+    c2ws_mat: torch.Tensor,  # [..., T, 4, 4]
+    trans_normalizer: float = 1.0,
+    ref_pose: torch.Tensor | None = None,  # [..., 1, 4, 4]
+) -> torch.Tensor:
+    if ref_pose is None:
+        ref_pose = c2ws_mat[..., 0:1, :, :]
+    assert ref_pose.shape[-3:] == (1, 4, 4)
+    c2ws_mat = torch.cat([ref_pose, c2ws_mat], dim=-3)
+    relative_poses = torch.bmm(
+        SE3_inverse(c2ws_mat[..., :-1, :, :]), c2ws_mat[..., 1:, :, :]
+    )
+    relative_poses[..., :, :3, 3] /= trans_normalizer
+    return relative_poses

@@ -17,6 +17,7 @@ from projects.lingbot_world.config import LINGBOT_WORLD_CONFIGS
 from projects.lingbot_world.camera_utils import (
     compute_relative_poses,
     get_plucker_embeddings,
+    compute_relative_poses_causal,
 )
 
 parser = argparse.ArgumentParser()
@@ -87,6 +88,8 @@ if torch.distributed.is_initialized():
 
 # prepare data
 plucker_videos = []
+camera_intrinsics = []
+camera_poses = []
 first_frames = []
 prompts = []
 for data in DATA:
@@ -98,11 +101,13 @@ for data in DATA:
     first_frame = rearrange(first_frame, "h w c -> 1 c h w")  # [1, C, H, W]
     first_frames.append(first_frame)
 
-    Ks = np.load(data["intrinsic_path"])  # [N, 4]
+    Ks = np.load(data["intrinsic_path"])  # [T, 4]
     Ks = torch.from_numpy(Ks).to(device=device, dtype=torch.float32)
-    c2ws = np.load(data["pose_path"])  # [N, 4, 4]
+    camera_intrinsics.append(Ks)
+    c2ws = np.load(data["pose_path"])  # [T, 4, 4]
     c2ws = torch.from_numpy(c2ws).to(device=device, dtype=torch.float32)
-    c2ws, _ = compute_relative_poses(c2ws, framewise=True)
+    camera_poses.append(c2ws)
+    c2ws, trans_normalizer = compute_relative_poses(c2ws, framewise=True)
     plucker_video = get_plucker_embeddings(
         c2ws, Ks, args.video_height, args.video_width
     )
@@ -113,6 +118,8 @@ for data in DATA:
     prompts.append(prompt)
 first_frames = torch.stack(first_frames, dim=0).unsqueeze(0)  # [B, V, 1, C, H, W]
 plucker_videos = torch.stack(plucker_videos, dim=0).unsqueeze(0)  # [B, V, T, C, H, W]
+camera_intrinsics = torch.stack(camera_intrinsics, dim=0).unsqueeze(0)  # [B, V, T, 4]
+camera_poses = torch.stack(camera_poses, dim=0).unsqueeze(0)  # [B, V, T, 4, 4]
 prompts = [prompts]  # [B, V]
 batch_size, num_views, plucker_num_frames, _3, height, width = plucker_videos.shape
 print("loaded plucker_videos.shape:", plucker_videos.shape)
@@ -130,6 +137,7 @@ if torch.distributed.is_initialized():
 # streaming inference
 start = 0
 generated_video = []
+last_pose = None
 for i in range(args.total_blocks):
     num_frames = pipeline.get_num_frames(i)
     end = start + num_frames
@@ -138,10 +146,23 @@ for i in range(args.total_blocks):
     print(
         f"autoregressive_index: {i}, num_frames: {num_frames}, start: {start}, end: {end}"
     )
+
+    curr_intrinsics = camera_intrinsics.squeeze(0).squeeze(0)[start:end]
+    curr_poses = camera_poses.squeeze(0).squeeze(0)[start:end]
+    curr_poses = compute_relative_poses_causal(curr_poses, trans_normalizer, last_pose)
+    last_pose = curr_poses[-1:]
+
+    curr_plucker = get_plucker_embeddings(curr_poses, curr_intrinsics, height, width)
+    curr_plucker = rearrange(curr_plucker, "t h w c -> t c h w").to(dtype=dtype)
+    curr_plucker = curr_plucker.unsqueeze(0).unsqueeze(0)
+
+    # _ref_plucker = plucker_videos[:, :, start:end]
+    # torch.testing.assert_close(curr_plucker, _ref_plucker, atol=1e-3, rtol=1e-3)
+
     generated_video.append(
         pipeline.streaming_inference(
             autoregressive_index=i,
-            plucker=plucker_videos[:, :, start:end],
+            plucker=curr_plucker,
             cache=cache,
         )
     )
