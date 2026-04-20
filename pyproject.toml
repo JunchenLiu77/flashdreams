@@ -9,39 +9,46 @@ description = "Flash video simulation pipeline"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "boto3==1.42.54",
-    "botocore==1.42.54",
-    "einops==0.8.2",
-    "ftfy==6.3.1",
-    "huggingface-hub==0.36.2",
-    "loguru==0.7.3",
-    "mediapy==1.2.6",
-    "numpy==1.26.4",
-    "nvidia-ml-py==13.590.48",
-    "safetensors==0.7.0",
-    "torch==2.11.0", # 2.11.0a0+eb65b36914.nv26.2
-    "tqdm==4.67.3",
-    "transformer-engine==2.12.0", # 2.12.0+5671fd36
+    "boto3>=1.35",
+    "botocore>=1.35",
+    "einops>=0.7",
+    "ftfy>=6.0",
+    "huggingface-hub>=0.33",
+    "loguru>=0.7",
+    "mediapy>=1.1",
+    "numpy>=1.24",
+    "nvidia-ml-py>=12.0",
+    "safetensors>=0.4",
+    "torch>=2.11.0a0",           # NVIDIA container ships 2.11.0a0+eb65b36914.nv26.2
+    "tqdm>=4.60",
+    "transformer-engine>=2.12",  # NVIDIA container ships 2.12.0+5671fd36
     "transformers==4.57.6",
-    "tyro==1.0.6",
+    "tyro>=0.8",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.1.1",
+    "pytest>=8.0",
 ]
 streaming = [
-    "pillow==11.1.0",
-    "websockets==14.2",
+    "pillow>=10.0",
+    "websockets>=14.0",
 ]
 # Optional: ``python -m projects.streaming_ws client --show-window`` for OpenCV preview.
 streaming_viewer = [
-    "opencv-python==4.10.0.84",
+    "opencv-python>=4.8",
 ]
 # Optional: ``python -m projects.streaming_ws viser`` — Viser UI, camera-driven mock (https://viser.studio/main/).
 streaming_viser = [
-    "viser>=1.0.26",
+    "viser>=1.0",
 ]
 
 [tool.setuptools.packages.find]
 exclude = ["tests"]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+markers = [
+    "manual: requires GPU and/or network access (opt-in only)",
+    "slow: long-running test",
+]

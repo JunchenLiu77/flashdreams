@@ -4,7 +4,9 @@
 
 ```bash
 # 0. request interactive node with pre-built container [IPP5 cluster as example]
-# note: the container `nvcr.io/nvidian/qiwu:fast-infer-v9` is built for ARM system.
+# note: pick the container that matches the cluster CPU architecture:
+#   - arm64: `nvcr.io/nvidian/qiwu:fast-infer-v9`
+#   - x86_64: `gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.1dev0`
 srun \
     --gpus-per-node=4 -q interactive --exclusive --nodes 1 --cpus-per-gpu 36 --pty \
     --partition=gtc_demo \
