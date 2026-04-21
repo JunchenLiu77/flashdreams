@@ -1,8 +1,8 @@
 from typing import Literal
 
-import mediapy as media
-import torch
 import pytest
+import torch
+import mediapy
 
 from flashsim.model.video_vae.teahv import (
     TeahvInterfaceConfig,
@@ -59,7 +59,7 @@ def test_tokenizer(
     detokenizer_cache = detokenizer.initialize_decode_cache()
 
     video_path = "./assets/example_data/alpadreams/camera_front_wide_120fov.mp4"
-    video = media.read_video(video_path)[:81]  # [T, H, W, 3]
+    video = mediapy.read_video(video_path)[:81]  # [T, H, W, 3]
     video = (
         torch.from_numpy(video).to(dtype=dtype, device=device) / 127.5 - 1.0
     )  # range [-1, 1]

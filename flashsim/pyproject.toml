@@ -15,7 +15,6 @@ dependencies = [
     "ftfy>=6.0",
     "huggingface-hub>=0.33",
     "loguru>=0.7",
-    "mediapy>=1.1",
     "numpy>=1.24",
     "nvidia-ml-py>=12.0",
     "safetensors>=0.4",
@@ -23,24 +22,13 @@ dependencies = [
     "tqdm>=4.60",
     "transformer-engine>=2.12",  # NVIDIA container ships 2.12.0+5671fd36
     "transformers==4.57.6",
-    "tyro>=0.8",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-]
-streaming = [
-    "pillow>=10.0",
-    "websockets>=14.0",
-]
-# Optional: ``python -m streaming_ws client --show-window`` for OpenCV preview.
-streaming_viewer = [
-    "opencv-python>=4.8",
-]
-# Optional: ``python -m streaming_ws viser`` — Viser UI, camera-driven mock (https://viser.studio/main/).
-streaming_viser = [
-    "viser>=1.0",
+    "tyro>=0.8",
+    "mediapy>=1.1",
 ]
 
 [tool.setuptools.packages.find]

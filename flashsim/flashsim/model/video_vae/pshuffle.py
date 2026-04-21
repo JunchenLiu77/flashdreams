@@ -82,11 +82,3 @@ class PixelShuffleVAEInterface(
     @property
     def spatial_compression_ratio(self) -> int:
         return 8
-
-
-if __name__ == "__main__":
-    import tyro
-
-    config = tyro.cli(PixelShuffleVAEInterfaceConfig)
-    model = config.setup()
-    print(model)

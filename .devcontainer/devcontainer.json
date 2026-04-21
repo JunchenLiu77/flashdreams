@@ -13,14 +13,15 @@
 	"remoteUser": "vscode",
 	"containerUser": "vscode",
 	"updateRemoteUserUID": true,
-	"postCreateCommand": "sudo uv pip install --system --break-system-packages --no-build-isolation -e flashsim[dev,streaming,streaming_viser]",
+	"postCreateCommand": "sudo uv pip install --system --break-system-packages --no-build-isolation -e flashsim[dev]",
 	"mounts": [
 		"source=${localEnv:HOME}/.cache/uv,target=/home/vscode/.cache/uv,type=bind",
 		"source=${localEnv:HOME}/.cache/huggingface,target=/home/vscode/.cache/huggingface,type=bind",
 		"source=${localEnv:HOME}/.cache/flashsim,target=/home/vscode/.cache/flashsim,type=bind"
 	],
 	"containerEnv": {
-		"HF_HOME": "/home/vscode/.cache/huggingface"
+		"HF_HOME": "/home/vscode/.cache/huggingface",
+		"UV_LINK_MODE": "copy"
 	}
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
