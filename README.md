@@ -18,16 +18,15 @@ uv run -m alpadreams.run --help
 ## Instructions to run Alpadreams Inference.
 
 ```bash
-# 0. request interactive node with pre-built container [IPP5 cluster as example]
-# note: pick the container that matches the cluster CPU architecture:
-#   - arm64: `nvcr.io/nvidian/qiwu:fast-infer-v9`
-#   - x86_64: `gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.1dev0`
+# 0. request interactive node with the pre-built container [IPP5 cluster as example].
+# The image is a multi-arch manifest (linux/arm64 + linux/amd64); the runtime picks
+# the right variant automatically. See `docker/README.md` for how it is built.
 srun \
     --gpus-per-node=4 -q interactive --exclusive --nodes 1 --cpus-per-gpu 36 --pty \
     --partition=gtc_demo \
     --time=24:00:00  \
     --pty \
-    --container-image=nvcr.io/nvidian/qiwu:fast-infer-v9 \
+    --container-image=gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3 \
     --container-mounts=/dev/nvidia-caps-imex-channels:/dev/nvidia-caps-imex-channels,/home:/home,/cm:/cm,/usr/share/glvnd/egl_vendor.d:/usr/share/glvnd/egl_vendor.d \
     --container-remap-root \
     --container-mount-home \
