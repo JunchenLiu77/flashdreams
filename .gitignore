@@ -126,3 +126,6 @@ compile_commands.json
 outputs/
 data_local/
 credentials/*.secret
+
+CLAUDE.md
+.cursor/
