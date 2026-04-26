@@ -1,22 +1,18 @@
 # Flashsim
 
-## Environment setup (one-time per container/environment)
+## Environment setup
 
-For inference, install only the integration you plan to run.
-It will pull in `flashsim` core as a dependency, so `PYTHONPATH=.` is not needed.
+Install all workspace packages (flashsim core + every integration) into a venv:
 
 ```bash
-# Example: install the alpadreams integration before running its commands
-uv pip install --system --break-system-packages --no-build-isolation -e integrations/alpadreams[dev]
-
-# Swap `alpadreams` for any integration directory:
-# causal_wan2_1, causal_wan2_2, lingbot_world, streaming_ws, wan2_1
+uv sync --extra dev
 ```
 
-Optional (core-only development workflow):
+Then run commands with `uv run` (auto-activates the venv):
 
 ```bash
-uv pip install --system --break-system-packages --no-build-isolation -e flashsim[dev]
+uv run pytest flashsim/tests
+uv run -m alpadreams.run --help
 ```
 
 ## Instructions to run Alpadreams Inference.

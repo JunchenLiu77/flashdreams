@@ -1,6 +1,6 @@
 {
 	"name": "base",
-	"image": "gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.2",
+	"image": "gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3",
 	"runArgs": ["--gpus", "all"],
 
 	// make the user internal to the container not root -> files created in container appear on host as owned by the $USER instead of root
@@ -29,7 +29,7 @@
 		// UV defaults to symlinking to cache dirs, which may not work with mounted volumes
 		"UV_LINK_MODE": "copy"
 	},
-	"postCreateCommand": "uv venv --system-site-packages --clear && uv sync --frozen --extra dev --no-build-isolation"
+	"postCreateCommand": "uv venv --clear && uv sync --frozen --extra dev"
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],

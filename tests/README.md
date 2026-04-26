@@ -44,7 +44,7 @@ is skipped.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `FLASHSIM_TEST_IMAGE` | `nvcr.io/nvidia/pytorch:26.02-py3` | Container image used for the run. |
+| `FLASHSIM_TEST_IMAGE` | `gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3` | Container image used for the run. |
 | `FLASHSIM_UV_CACHE_DIR` | `${HOME}/.cache/uv` | Host dir mounted to `/root/.cache/uv`. |
 | `FLASHSIM_HF_CACHE_DIR` | `${HOME}/.cache/huggingface` | Host dir mounted to `/root/.cache/huggingface`. |
 | `FLASHSIM_CACHE_DIR` | `${HOME}/.cache/flashsim` | Host dir mounted to `/root/.cache/flashsim`. |

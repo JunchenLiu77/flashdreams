@@ -10,7 +10,7 @@
 #   ./tests/run_tests_docker.sh [TEST_TARGET...]
 #
 # Environment overrides:
-#   FLASHSIM_TEST_IMAGE         (default: gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.2)
+#   FLASHSIM_TEST_IMAGE         (default: gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3-20260424-55bd566)
 #   FLASHSIM_UV_CACHE_DIR       (default: ${HOME}/.cache/uv)
 #   FLASHSIM_HF_CACHE_DIR       (default: ${HOME}/.cache/huggingface)
 #   FLASHSIM_CACHE_DIR          (default: ${HOME}/.cache/flashsim)
@@ -25,7 +25,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${FLASHSIM_TEST_IMAGE:-gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.2}"
+IMAGE="${FLASHSIM_TEST_IMAGE:-gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3-20260424-55bd566}"
 
 UV_CACHE_HOST="${FLASHSIM_UV_CACHE_DIR:-${HOME}/.cache/uv}"
 HF_CACHE_HOST="${FLASHSIM_HF_CACHE_DIR:-${HOME}/.cache/huggingface}"
@@ -45,15 +45,18 @@ docker run --rm -i \
     -v "${FLASHSIM_CACHE_HOST}:/root/.cache/flashsim" \
     -v "${TRITON_CACHE_HOST}:/root/.cache/triton" \
     -e HF_HOME=/root/.cache/huggingface \
-    -e UV_LINK_MODE=copy \
     -e TRITON_CACHE_DIR=/root/.cache/triton \
+    -e UV_LINK_MODE=copy \
+    -e UV_PROJECT_ENVIRONMENT=/tmp/flashsim-venv \
     -w /workspace/flashsim \
     "${IMAGE}" \
     bash -s -- "$@" <<'EOF'
 set -euo pipefail
 
-uv venv --system-site-packages --clear
-uv sync --frozen --extra dev --no-build-isolation
+# UV_PROJECT_ENVIRONMENT is set via docker -e so the venv lives outside the
+# bind-mounted workspace, avoiding root-owned .venv on the host.
+uv venv --clear
+uv sync --frozen --extra dev
 
 exec bash /workspace/flashsim/tests/run_tests_local.sh "$@"
 EOF

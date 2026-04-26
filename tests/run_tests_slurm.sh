@@ -33,7 +33,7 @@
 #   --rebuild-image or `rm` the .sqsh file.
 #
 # Environment overrides:
-#   FLASHSIM_TEST_IMAGE        (default: gitlab-master.nvidia.com/sil/flashsim:base-v0.2)
+#   FLASHSIM_TEST_IMAGE        (default: gitlab-master.nvidia.com/sil/flashsim:base-v0.3-20260424-55bd566)
 #   FLASHSIM_UV_CACHE_DIR      (default: ${HOME}/.cache/uv)
 #   FLASHSIM_HF_CACHE_DIR      (default: ${HOME}/.cache/huggingface)
 #   FLASHSIM_CACHE_DIR         (default: ${HOME}/.cache/flashsim)
@@ -51,7 +51,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${FLASHSIM_TEST_IMAGE:-gitlab-master.nvidia.com/sil/flashsim:base-v0.2}"
+IMAGE="${FLASHSIM_TEST_IMAGE:-gitlab-master.nvidia.com/sil/flashsim:base-v0.3-20260424-55bd566}"
 
 SLURM_PARTITION=""
 SLURM_ACCOUNT=""
@@ -134,8 +134,8 @@ fi
 if [[ ! -f "${IMAGE_SQSH}" ]]; then
     if command -v enroot >/dev/null 2>&1; then
         echo "=== Importing container image to ${IMAGE_SQSH} (one-time, may take several minutes) ==="
-        # enroot import accepts both 'docker://nvcr.io/nvidia/pytorch:26.02-py3'
-        # and 'docker://nvcr.io#nvidia/pytorch:26.02-py3'. Pass through any
+        # enroot import accepts both 'docker://registry.example.com/image:tag'
+        # and 'docker://registry.example.com#image:tag'. Pass through any
         # explicit URI; otherwise prefix with docker://.
         case "${IMAGE}" in
             *://*) IMAGE_URI="${IMAGE}" ;;
@@ -183,12 +183,14 @@ srun "${SRUN_ARGS[@]}" \
     --container-writable \
     --container-mount-home \
     --container-remap-root \
-    --export=ALL,HF_HOME=/root/.cache/huggingface,UV_LINK_MODE=copy,TRITON_CACHE_DIR=/root/.cache/triton \
+    --export=ALL,HF_HOME=/root/.cache/huggingface,UV_LINK_MODE=copy,TRITON_CACHE_DIR=/root/.cache/triton,UV_PROJECT_ENVIRONMENT=/tmp/flashsim-venv \
     bash -s -- "${TEST_TARGETS[@]}" <<'EOF' || rc=$?
 set -euo pipefail
 
-uv venv --system-site-packages --clear
-uv sync --frozen --extra dev --no-build-isolation
+# UV_PROJECT_ENVIRONMENT is exported via srun --export so the venv lives
+# outside the bind-mounted workspace, avoiding root-owned .venv on the host.
+uv venv --clear
+uv sync --frozen --extra dev
 
 exec bash /workspace/flashsim/tests/run_tests_local.sh "$@"
 EOF

@@ -1,2 +1,17 @@
 [tool.uv.workspace]
 members = ["flashsim", "integrations/*"]
+
+# Override nvidia-cublas to >=13.4 because transformer-engine-cu13 2.14.0 was
+# compiled against cuBLAS 13.4.x, while torch 2.11 pins nvidia-cublas 13.1.0.3.
+# cuBLAS 13.4 is backwards compatible with 13.1.
+[tool.uv]
+override-dependencies = ["nvidia-cublas>=13.4"]
+
+# `transformer-engine-torch` has no prebuilt wheel and must be built against
+# the project's PyTorch + system CUDA. uv's default per-package build isolation
+# spins up a clean venv with a fresh CPU-only torch (no numpy, no CUDA), so
+# TE's `parse(torch.version.cuda)` crashes with `TypeError: ... got 'NoneType'`.
+# This is the upstream-acknowledged workaround tracked in
+# https://github.com/NVIDIA/TransformerEngine/issues/1323 — disable isolation
+# so TE builds against the resolved torch from the project venv.
+no-build-isolation-package = ["transformer-engine-torch"]

@@ -11,4 +11,4 @@ set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-uv run pytest -m "not manual" "${TEST_TARGETS[@]}"
+uv run --extra dev pytest -m "not manual" "$@"
