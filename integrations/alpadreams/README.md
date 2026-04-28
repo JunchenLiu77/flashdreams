@@ -1,3 +1,3 @@
 # `alpadreams`
 
-Alpadreams integration package for `flashsim`.
+Alpadreams integration package for `flashdreams`.

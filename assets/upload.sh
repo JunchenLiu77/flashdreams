@@ -2,5 +2,5 @@
 
 CURRENT_DIR=$(dirname $(realpath $0))
 
-# aws s3 sync $CURRENT_DIR/checkpoints s3://flashsim/assets/checkpoints --profile team-sil-videogen --endpoint-url https://pdx.s8k.io
-aws s3 sync $CURRENT_DIR/example_data s3://flashsim/assets/example_data --profile team-sil-videogen --endpoint-url https://pdx.s8k.io
+aws s3 sync $CURRENT_DIR/checkpoints s3://flashdreams/assets/checkpoints --profile team-sil-videogen --endpoint-url https://pdx.s8k.io
+aws s3 sync $CURRENT_DIR/example_data s3://flashdreams/assets/example_data --profile team-sil-videogen --endpoint-url https://pdx.s8k.io

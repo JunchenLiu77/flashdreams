@@ -1,6 +1,6 @@
-# `docker/` — flashsim container image
+# `docker/` — flashdreams container image
 
-This folder contains the recipe and tooling for the flashsim base container
+This folder contains the recipe and tooling for the flashdreams base container
 image. Most users do **not** need anything here — they just reference the
 prebuilt image by tag, as documented in the top-level [README](../README.md#instructions-to-run-alpadreams-inference).
 
@@ -13,7 +13,7 @@ Rebuild only when the Dockerfile or pinned dependencies change.
 | File | Purpose |
 |---|---|
 | `Dockerfile` | Image recipe. Based on `nvidia/cuda:13.2.1-cudnn-devel-ubuntu24.04`. |
-| `build_with_docker.sh` | Build + push a multi-arch (`linux/arm64` + `linux/amd64`) image to `gitlab-master.nvidia.com:5005/sil/flashsim`. |
+| `build_with_docker.sh` | Build + push a multi-arch (`linux/arm64` + `linux/amd64`) image to `gitlab-master.nvidia.com:5005/sil/flashdreams`. |
 | `docker_farm_setup.sh` | One-time Buildx "farm" setup so arm64 builds run natively on `dgx-spark` instead of under QEMU emulation. |
 
 ---
@@ -21,7 +21,7 @@ Rebuild only when the Dockerfile or pinned dependencies change.
 ## Canonical image
 
 ```
-gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3-20260424-55bd566
+gitlab-master.nvidia.com:5005/sil/flashdreams:base-v0.3-20260424-55bd566
 ```
 
 Multi-arch (linux/arm64 + linux/amd64) — the container runtime picks the

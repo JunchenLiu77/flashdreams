@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# INTERNAL helper: discover flashsim test files and invoke pytest.
+# INTERNAL helper: discover flashdreams test files and invoke pytest.
 #
-# It assumes flashsim and its integrations are already installed in the active
+# It assumes flashdreams and its integrations are already installed in the active
 # Python environment. CWD is changed to the repo root so the discovery globs
 # resolve correctly regardless of where the caller invoked us from.
 #

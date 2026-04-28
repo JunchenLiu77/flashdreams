@@ -1,6 +1,6 @@
 #!/bin/bash
 # -----------------------------------------------------------------------------
-# build_with_docker.sh — Build & push the flashsim base image (multi-arch)
+# build_with_docker.sh — Build & push the flashdreams base image (multi-arch)
 # -----------------------------------------------------------------------------
 #
 # WHAT THIS SCRIPT DOES
@@ -10,7 +10,7 @@
 # GitLab container registry.
 #
 # Tag scheme:
-#     gitlab-master.nvidia.com:5005/sil/flashsim:<TAG>-<YYYYMMDD>-<git-sha>
+#     gitlab-master.nvidia.com:5005/sil/flashdreams:<TAG>-<YYYYMMDD>-<git-sha>
 #
 # The date + short git SHA make every build uniquely addressable, while the
 # TAG prefix (e.g. "base-v0.3") tracks the Dockerfile's major revision.
@@ -76,5 +76,5 @@ docker buildx build \
     --allow network.host \
     --network host \
     --push \
-    -t gitlab-master.nvidia.com:5005/sil/flashsim:$TAG-$(date +%Y%m%d)-$(git rev-parse --short HEAD) \
+    -t gitlab-master.nvidia.com:5005/sil/flashdreams:$TAG-$(date +%Y%m%d)-$(git rev-parse --short HEAD) \
     -f docker/Dockerfile .

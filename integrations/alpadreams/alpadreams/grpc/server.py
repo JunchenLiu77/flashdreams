@@ -29,8 +29,8 @@ from ludus_renderer import nvjpeg
 
 from alpadreams.conditioning.world_scenario.data_types import SceneData
 from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
-from flashsim.core.distributed import init as distributed_init
-from flashsim.core.distributed.context_parallel import (
+from flashdreams.core.distributed import init as distributed_init
+from flashdreams.core.distributed.context_parallel import (
     cat_outputs_cp_object_list,
     split_inputs_cp_object_list,
 )
@@ -59,8 +59,8 @@ from alpadreams.grpc.profiling_server import (
 )
 from alpadreams.grpc.session_recorder import SessionRecorder
 from alpadreams.conditioning.video_model_api import TextPrompt, get_av_text_prompts
-from alpadreams.conditioning.video_model_flashsim_pipeline import (
-    FlashsimPipelineVideoModelAPI,
+from alpadreams.conditioning.video_model_flashdreams_pipeline import (
+    FlashDreamsPipelineVideoModelAPI,
 )
 from alpadreams.conditioning.renderer import LudusRenderer
 
@@ -225,7 +225,7 @@ def build_bbox_conditioned_api(
     if denoising_step_list is None:
         denoising_step_list = [1000, 500]
 
-    video_model_api = FlashsimPipelineVideoModelAPI(
+    video_model_api = FlashDreamsPipelineVideoModelAPI(
         n_cameras=n_cameras,
         resolution_wh=RESO_MAP[reso],
         local_attn_size=local_attn_size,
@@ -244,7 +244,7 @@ def build_bbox_conditioned_api(
     )
     if cp_size > 1:
         logger.info(
-            "Context-parallel server orchestration enabled; view split/gather is handled inside flashsim pipeline."
+            "Context-parallel server orchestration enabled; view split/gather is handled inside flashdreams pipeline."
         )
 
     # Wrap with bbox conditioning (renderer will be created in start_generation)
@@ -1718,7 +1718,7 @@ def main() -> None:
         args.context_parallel_size, args.n_cameras, args.device
     )
     logger.info(
-        "Using flashsim pipeline backend; checkpoints are loaded lazily via flashsim checkpoint loader."
+        "Using flashdreams pipeline backend; checkpoints are loaded lazily via flashdreams checkpoint loader."
     )
 
     # Initialize profiler if requested

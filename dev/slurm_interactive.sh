@@ -29,15 +29,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-REPO_ROOT="${FLASHSIM_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-IMAGE="${FLASHSIM_TEST_IMAGE:-gitlab-master.nvidia.com/sil/flashsim:base-v0.3-20260424-55bd566}"
+REPO_ROOT="${FLASHDREAMS_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+IMAGE="${FLASHDREAMS_TEST_IMAGE:-gitlab-master.nvidia.com/sil/flashdreams:base-v0.3-20260424-55bd566}"
 
-UV_CACHE_HOST="${FLASHSIM_UV_CACHE_DIR:-${HOME}/.cache/uv}"
-HF_CACHE_HOST="${FLASHSIM_HF_CACHE_DIR:-${HOME}/.cache/huggingface}"
-FLASHSIM_CACHE_HOST="${FLASHSIM_CACHE_DIR:-${HOME}/.cache/flashsim}"
-TRITON_CACHE_HOST="${FLASHSIM_TRITON_CACHE_DIR:-${HOME}/.cache/triton}"
+UV_CACHE_HOST="${FLASHDREAMS_UV_CACHE_DIR:-${HOME}/.cache/uv}"
+HF_CACHE_HOST="${FLASHDREAMS_HF_CACHE_DIR:-${HOME}/.cache/huggingface}"
+FLASHDREAMS_CACHE_HOST="${FLASHDREAMS_CACHE_DIR:-${HOME}/.cache/flashdreams}"
+TRITON_CACHE_HOST="${FLASHDREAMS_TRITON_CACHE_DIR:-${HOME}/.cache/triton}"
 
-mkdir -p "${UV_CACHE_HOST}" "${HF_CACHE_HOST}" "${FLASHSIM_CACHE_HOST}" "${TRITON_CACHE_HOST}"
+mkdir -p "${UV_CACHE_HOST}" "${HF_CACHE_HOST}" "${FLASHDREAMS_CACHE_HOST}" "${TRITON_CACHE_HOST}"
 
 srun -A "${SLURM_ACCOUNT}" \
     --partition="${SLURM_PARTITION}" \
@@ -49,8 +49,8 @@ srun -A "${SLURM_ACCOUNT}" \
     --time=4:00:00 \
     --pty \
     --container-image="${IMAGE}" \
-    --container-mounts="${REPO_ROOT}:/workspace/flashsim,${UV_CACHE_HOST}:/root/.cache/uv,${HF_CACHE_HOST}:/root/.cache/huggingface,${FLASHSIM_CACHE_HOST}:/root/.cache/flashsim,${TRITON_CACHE_HOST}:/root/.cache/triton,/lustre:/lustre" \
-    --container-workdir=/workspace/flashsim \
+    --container-mounts="${REPO_ROOT}:/workspace/flashdreams,${UV_CACHE_HOST}:/root/.cache/uv,${HF_CACHE_HOST}:/root/.cache/huggingface,${FLASHDREAMS_CACHE_HOST}:/root/.cache/flashdreams,${TRITON_CACHE_HOST}:/root/.cache/triton,/lustre:/lustre" \
+    --container-workdir=/workspace/flashdreams \
     --container-writable \
     --container-mount-home \
     --container-remap-root \

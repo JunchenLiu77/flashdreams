@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Run the flashsim test suite on a Slurm-allocated GPU node.
+# Run the flashdreams test suite on a Slurm-allocated GPU node.
 #
 # Use this on a login / dev machine without a local GPU. The script submits
 # a single srun job that pulls the configured container (Pyxis/enroot),
-# installs flashsim + integration packages on the fly, then invokes pytest.
-# Caches for uv / huggingface / flashsim are bind-mounted from the host.
+# installs flashdreams + integration packages on the fly, then invokes pytest.
+# Caches for uv / huggingface / flashdreams are bind-mounted from the host.
 #
 # Usage:
 #   ./tests/run_tests_slurm.sh --partition NAME --account NAME
@@ -27,18 +27,18 @@
 #
 # Container-image caching:
 #   The first run does `enroot import` on the login node and stores the
-#   resulting .sqsh under FLASHSIM_IMAGE_CACHE_DIR. Subsequent runs pass the
+#   resulting .sqsh under FLASHDREAMS_IMAGE_CACHE_DIR. Subsequent runs pass the
 #   local .sqsh straight to --container-image, avoiding a multi-minute
 #   docker→sqsh conversion inside every srun. To force a rebuild, either pass
 #   --rebuild-image or `rm` the .sqsh file.
 #
 # Environment overrides:
-#   FLASHSIM_TEST_IMAGE        (default: gitlab-master.nvidia.com/sil/flashsim:base-v0.3-20260424-55bd566)
-#   FLASHSIM_UV_CACHE_DIR      (default: ${HOME}/.cache/uv)
-#   FLASHSIM_HF_CACHE_DIR      (default: ${HOME}/.cache/huggingface)
-#   FLASHSIM_CACHE_DIR         (default: ${HOME}/.cache/flashsim)
-#   FLASHSIM_TRITON_CACHE_DIR  (default: ${HOME}/.cache/triton)
-#   FLASHSIM_IMAGE_CACHE_DIR   (default: ${FLASHSIM_CACHE_DIR}/containers)
+#   FLASHDREAMS_TEST_IMAGE        (default: gitlab-master.nvidia.com/sil/flashdreams:base-v0.3-20260424-55bd566)
+#   FLASHDREAMS_UV_CACHE_DIR      (default: ${HOME}/.cache/uv)
+#   FLASHDREAMS_HF_CACHE_DIR      (default: ${HOME}/.cache/huggingface)
+#   FLASHDREAMS_CACHE_DIR         (default: ${HOME}/.cache/flashdreams)
+#   FLASHDREAMS_TRITON_CACHE_DIR  (default: ${HOME}/.cache/triton)
+#   FLASHDREAMS_IMAGE_CACHE_DIR   (default: ${FLASHDREAMS_CACHE_DIR}/containers)
 #
 # Examples:
 #   # All tests, full node on the batch partition
@@ -47,11 +47,11 @@
 #   # Interactive QOS + a specific test file
 #   ./tests/run_tests_slurm.sh --partition batch --account nvr_torontoai_videogen \
 #       --qos interactive --gpus 4 --time 02:00:00 \
-#       -- flashsim/tests/test_attention.py
+#       -- flashdreams/tests/test_attention.py
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${FLASHSIM_TEST_IMAGE:-gitlab-master.nvidia.com/sil/flashsim:base-v0.3-20260424-55bd566}"
+IMAGE="${FLASHDREAMS_TEST_IMAGE:-gitlab-master.nvidia.com/sil/flashdreams:base-v0.3-20260424-55bd566}"
 
 SLURM_PARTITION=""
 SLURM_ACCOUNT=""
@@ -112,12 +112,12 @@ if [[ -z "${SLURM_PARTITION}" || -z "${SLURM_ACCOUNT}" ]]; then
     exit 2
 fi
 
-UV_CACHE_HOST="${FLASHSIM_UV_CACHE_DIR:-${HOME}/.cache/uv}"
-HF_CACHE_HOST="${FLASHSIM_HF_CACHE_DIR:-${HOME}/.cache/huggingface}"
-FLASHSIM_CACHE_HOST="${FLASHSIM_CACHE_DIR:-${HOME}/.cache/flashsim}"
-TRITON_CACHE_HOST="${FLASHSIM_TRITON_CACHE_DIR:-${HOME}/.cache/triton}"
-IMAGE_CACHE_DIR="${FLASHSIM_IMAGE_CACHE_DIR:-${FLASHSIM_CACHE_HOST}/containers}"
-mkdir -p "${UV_CACHE_HOST}" "${HF_CACHE_HOST}" "${FLASHSIM_CACHE_HOST}" \
+UV_CACHE_HOST="${FLASHDREAMS_UV_CACHE_DIR:-${HOME}/.cache/uv}"
+HF_CACHE_HOST="${FLASHDREAMS_HF_CACHE_DIR:-${HOME}/.cache/huggingface}"
+FLASHDREAMS_CACHE_HOST="${FLASHDREAMS_CACHE_DIR:-${HOME}/.cache/flashdreams}"
+TRITON_CACHE_HOST="${FLASHDREAMS_TRITON_CACHE_DIR:-${HOME}/.cache/triton}"
+IMAGE_CACHE_DIR="${FLASHDREAMS_IMAGE_CACHE_DIR:-${FLASHDREAMS_CACHE_HOST}/containers}"
+mkdir -p "${UV_CACHE_HOST}" "${HF_CACHE_HOST}" "${FLASHDREAMS_CACHE_HOST}" \
     "${TRITON_CACHE_HOST}" "${IMAGE_CACHE_DIR}"
 
 # Cache the container image as a local .sqsh on the login node so that each
@@ -176,8 +176,8 @@ fi
 
 SRUN_CONTAINER_ARGS=(
     --container-image="${CONTAINER_IMAGE_ARG}"
-    --container-mounts="${REPO_ROOT}:/workspace/flashsim,${UV_CACHE_HOST}:/root/.cache/uv,${HF_CACHE_HOST}:/root/.cache/huggingface,${FLASHSIM_CACHE_HOST}:/root/.cache/flashsim,${TRITON_CACHE_HOST}:/root/.cache/triton"
-    --container-workdir=/workspace/flashsim
+    --container-mounts="${REPO_ROOT}:/workspace/flashdreams,${UV_CACHE_HOST}:/root/.cache/uv,${HF_CACHE_HOST}:/root/.cache/huggingface,${FLASHDREAMS_CACHE_HOST}:/root/.cache/flashdreams,${TRITON_CACHE_HOST}:/root/.cache/triton"
+    --container-workdir=/workspace/flashdreams
     --container-writable
     --container-mount-home
     --container-remap-root
@@ -201,7 +201,7 @@ set -euo pipefail
 uv venv --clear
 uv sync --frozen --extra dev
 
-exec bash /workspace/flashsim/tests/run_tests_local.sh "$@"
+exec bash /workspace/flashdreams/tests/run_tests_local.sh "$@"
 EOF
 echo "EOF"
 
@@ -214,7 +214,7 @@ set -euo pipefail
 uv venv --clear
 uv sync --frozen --extra dev
 
-exec bash /workspace/flashsim/tests/run_tests_local.sh "$@"
+exec bash /workspace/flashdreams/tests/run_tests_local.sh "$@"
 EOF
 
 if [[ ${rc} -ne 0 ]]; then

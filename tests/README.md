@@ -1,6 +1,6 @@
-# flashsim test runners
+# flashdreams test runners
 
-Three entrypoints for running the flashsim test suite. Pick the one that matches your dev setup.
+Three entrypoints for running the flashdreams test suite. Pick the one that matches your dev setup.
 
 | Script | Audience | What it does |
 | --- | --- | --- |
@@ -15,19 +15,19 @@ All three scripts resolve paths relative to their own location and can be invoke
 ## Quick examples
 
 ```bash
-# Already inside a dev container (your venv has flashsim[dev] + integrations)
+# Already inside a dev container (your venv has flashdreams[dev] + integrations)
 ./tests/run_tests_local.sh
-./tests/run_tests_local.sh flashsim/tests/test_attention.py
+./tests/run_tests_local.sh flashdreams/tests/test_attention.py
 
 # Local machine with docker + GPU
 ./tests/run_tests_docker.sh
-./tests/run_tests_docker.sh flashsim/tests/test_attention.py
+./tests/run_tests_docker.sh flashdreams/tests/test_attention.py
 
 # Slurm (Pyxis/enroot) from a login node
 ./tests/run_tests_slurm.sh --partition batch --account nvr_torontoai_videogen --gpus 4
 ./tests/run_tests_slurm.sh --partition batch --account nvr_torontoai_videogen \
     --qos interactive --gpus 4 --cpus-per-gpu 36 --time 02:00:00 \
-    -- flashsim/tests/test_attention.py
+    -- flashdreams/tests/test_attention.py
 ```
 
 ## What gets run
@@ -44,11 +44,11 @@ is skipped.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `FLASHSIM_TEST_IMAGE` | `gitlab-master.nvidia.com:5005/sil/flashsim:base-v0.3` | Container image used for the run. |
-| `FLASHSIM_UV_CACHE_DIR` | `${HOME}/.cache/uv` | Host dir mounted to `/root/.cache/uv`. |
-| `FLASHSIM_HF_CACHE_DIR` | `${HOME}/.cache/huggingface` | Host dir mounted to `/root/.cache/huggingface`. |
-| `FLASHSIM_CACHE_DIR` | `${HOME}/.cache/flashsim` | Host dir mounted to `/root/.cache/flashsim`. |
-| `FLASHSIM_TRITON_CACHE_DIR` | `${HOME}/.cache/triton` | Host dir mounted to `/root/.cache/triton`; persisted across runs to avoid recompiling Triton kernels (also exported as `TRITON_CACHE_DIR`). |
+| `FLASHDREAMS_TEST_IMAGE` | `gitlab-master.nvidia.com:5005/sil/flashdreams:base-v0.3` | Container image used for the run. |
+| `FLASHDREAMS_UV_CACHE_DIR` | `${HOME}/.cache/uv` | Host dir mounted to `/root/.cache/uv`. |
+| `FLASHDREAMS_HF_CACHE_DIR` | `${HOME}/.cache/huggingface` | Host dir mounted to `/root/.cache/huggingface`. |
+| `FLASHDREAMS_CACHE_DIR` | `${HOME}/.cache/flashdreams` | Host dir mounted to `/root/.cache/flashdreams`. |
+| `FLASHDREAMS_TRITON_CACHE_DIR` | `${HOME}/.cache/triton` | Host dir mounted to `/root/.cache/triton`; persisted across runs to avoid recompiling Triton kernels (also exported as `TRITON_CACHE_DIR`). |
 
 Each script also has its own `--help` (slurm) or top-of-file usage block
 (docker / in-container) for the full set of CLI flags.
@@ -56,21 +56,21 @@ Each script also has its own `--help` (slurm) or top-of-file usage block
 ## Container image caching (slurm only)
 
 `run_tests_slurm.sh` does a one-time `enroot import` on the login node and
-stores the resulting `.sqsh` under `${FLASHSIM_IMAGE_CACHE_DIR}` (defaults to
-`${HOME}/.cache/flashsim/containers`). Subsequent runs pass that local file
+stores the resulting `.sqsh` under `${FLASHDREAMS_IMAGE_CACHE_DIR}` (defaults to
+`${HOME}/.cache/flashdreams/containers`). Subsequent runs pass that local file
 straight to `--container-image=...`, so they skip the multi-minute
 docker→sqsh conversion that pyxis would otherwise repeat inside every job.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `FLASHSIM_IMAGE_CACHE_DIR` | `${FLASHSIM_CACHE_DIR}/containers` | Where cached `.sqsh` files live. |
+| `FLASHDREAMS_IMAGE_CACHE_DIR` | `${FLASHDREAMS_CACHE_DIR}/containers` | Where cached `.sqsh` files live. |
 
 To force a re-import (e.g. after the upstream tag is re-pushed):
 
 ```bash
 ./tests/run_tests_slurm.sh --rebuild-image --partition batch --account <ACCT> --gpus 8
 # or just delete the file:
-rm "${HOME}/.cache/flashsim/containers/nvcr.io_nvidia_pytorch_26.02-py3.sqsh"
+rm "${HOME}/.cache/flashdreams/containers/nvcr.io_nvidia_pytorch_26.02-py3.sqsh"
 ```
 
 If `enroot` isn't on the login node's PATH, the script falls back to letting
