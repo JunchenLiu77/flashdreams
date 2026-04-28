@@ -138,16 +138,3 @@ class SessionRecorder:
             self._file.close()
             self._file = None
             logger.info(f"Recording saved: {self.output_path} ({self._seq} entries)")
-
-    @property
-    def entry_count(self) -> int:
-        """Return the number of entries recorded so far."""
-        return self._seq
-
-    def __enter__(self) -> "SessionRecorder":
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - ensures file is closed."""
-        self.close()

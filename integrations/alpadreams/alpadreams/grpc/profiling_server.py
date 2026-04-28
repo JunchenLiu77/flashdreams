@@ -11,7 +11,6 @@ This module adds timing instrumentation to the gRPC server to track:
 
 Usage:
     Add --enable_profiling and --profile_output arguments to grpc_server.py
-    Use @profile_method decorator on methods you want to profile
 
 The profiler auto-saves periodically and on session end, so you don't need
 to stop the server to get profiling data.
@@ -19,14 +18,13 @@ to stop the server to get profiling data.
 
 from __future__ import annotations
 
-import functools
 import json
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from loguru import logger
 
@@ -251,57 +249,3 @@ def get_profiler() -> ServerProfiler:
     if _profiler is None:
         _profiler = ServerProfiler(enabled=False)
     return _profiler
-
-
-def profile_method(
-    category: str | None = None, extract_session_id: Callable | None = None
-):
-    """
-    Decorator to profile a method.
-
-    Args:
-        category: Category name for profiling. If None, uses function name.
-        extract_session_id: Optional function to extract session_id from args.
-                           Should take (*args, **kwargs) and return session_id string.
-
-    Example:
-        @profile_method("start_session")
-        def start_session(self, request, context):
-            ...
-
-        @profile_method(extract_session_id=lambda self, request, ctx: request.session_id.session_id)
-        def render_video_chunk(self, request, context):
-            ...
-    """
-
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            profiler = get_profiler()
-
-            if not profiler.enabled:
-                return func(*args, **kwargs)
-
-            # Determine category name
-            cat = category if category else func.__name__
-
-            # Try to extract session_id
-            session_id = "unknown"
-            if extract_session_id:
-                try:
-                    session_id = extract_session_id(*args, **kwargs)
-                except Exception:
-                    pass
-
-            # Get chunk index
-            chunk_idx = profiler.get_chunk_idx(session_id)
-
-            # Measure execution time
-            with profiler.measure(cat, session_id=session_id, chunk_idx=chunk_idx):
-                result = func(*args, **kwargs)
-
-            return result
-
-        return wrapper
-
-    return decorator

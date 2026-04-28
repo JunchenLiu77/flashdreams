@@ -25,12 +25,6 @@ from alpadreams.conditioning.world_scenario.pcd_utils import (
 DEPTH_MAX = 122.5
 
 
-def make_sure_torch(x: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-    if isinstance(x, np.ndarray):
-        return torch.from_numpy(x)
-    return x
-
-
 def make_sure_numpy(x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     if isinstance(x, torch.Tensor):
         return x.cpu().numpy()

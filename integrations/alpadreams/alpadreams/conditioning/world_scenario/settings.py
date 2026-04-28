@@ -10,8 +10,6 @@
 Configuration for rendering HD maps.
 """
 
-from typing import Sequence
-
 # Settings aligned with dataset_rds_hq_mv.json
 # From https://github.com/nv-tlabs/Cosmos-Drive-Dreams/tree/main/cosmos-drive-dreams-toolkits
 SETTINGS = {
@@ -28,14 +26,3 @@ SETTINGS = {
     "TARGET_RENDER_FPS": 30,
     "MAX_CHUNK": 10,
 }
-
-# Canonical underscore camera names used across loaders and scripts
-DEFAULT_CAMERA_NAMES: Sequence[str] = (
-    "camera_front_wide_120fov",
-    "camera_front_tele_30fov",
-    "camera_cross_right_120fov",
-    "camera_cross_left_120fov",
-    "camera_rear_left_70fov",
-    "camera_rear_right_70fov",
-    "camera_rear_tele_30fov",
-)
