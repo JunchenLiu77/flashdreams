@@ -23,6 +23,10 @@ class EventProfiler:
     """
 
     def __init__(self) -> None:
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
         self._start = torch.cuda.Event(enable_timing=True)
         self._ends: dict[str, torch.cuda.Event] = {}
         self._start.record()
