@@ -252,4 +252,6 @@ def apply_rope_freqs(x: Tensor, freqs: Tensor, interleaved: bool = False) -> Ten
     Returns:
         Output tensor of shape ``[B, S, H, D]``.
     """
-    return apply_rotary_pos_emb(x, freqs, interleaved)
+    return apply_rotary_pos_emb(
+        x, freqs, tensor_format="bshd", fused=True, interleaved=interleaved
+    )
