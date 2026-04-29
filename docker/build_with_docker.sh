@@ -69,12 +69,13 @@
 
 set -eu -o pipefail
 
-TAG=base-v0.3
+TAG=base-v0.3-$(date +%Y%m%d)-$(git rev-parse --short HEAD)
 
 docker buildx build \
     --platform linux/arm64,linux/amd64 \
     --allow network.host \
     --network host \
     --push \
-    -t ghcr.io/nvidia/flashdreams:$TAG-$(date +%Y%m%d)-$(git rev-parse --short HEAD) \
+    -t ghcr.io/nvidia/flashdreams:$TAG \
+    -t gitlab-master.nvidia.com:5005/sil/flashdreams:$TAG \
     -f docker/Dockerfile .
