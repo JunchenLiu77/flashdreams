@@ -14,6 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+# Sibling modules; ``conftest.py`` adds this directory to ``sys.path``.
+import impl_reference_flow_match as _ref_fm  # noqa: E402
+import impl_reference_flow_unipc as _ref_unipc  # noqa: E402
 import pytest
 import torch
 from torch import Tensor
@@ -24,11 +27,6 @@ from flashdreams.infra.diffusion.scheduler import (
     FlowMatchUniPCScheduler,
     FlowMatchUniPCSchedulerConfig,
 )
-
-# Sibling modules; ``conftest.py`` adds this directory to ``sys.path``.
-import impl_reference_flow_match as _ref_fm  # noqa: E402
-import impl_reference_flow_unipc as _ref_unipc  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Stub flow predictors. Pure tensor math, no module: keeps the parity

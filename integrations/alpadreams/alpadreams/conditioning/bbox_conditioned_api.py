@@ -17,11 +17,7 @@ from typing import Generic
 
 import numpy as np
 import torch
-from torch import Tensor, nn
-
-from alpadreams.conditioning.world_scenario.data_types import SceneData
-from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
-from alpadreams.grpc.profiling_server import get_profiler, get_profiling_context
+from alpadreams.conditioning.renderer import LudusRenderer
 from alpadreams.conditioning.video_model_api import (
     BaseLatentCache,
     LatentCacheT,
@@ -29,7 +25,10 @@ from alpadreams.conditioning.video_model_api import (
     VideoModelAPI,
     VideoModelConformanceWrapper,
 )
-from alpadreams.conditioning.renderer import LudusRenderer
+from alpadreams.conditioning.world_scenario.data_types import SceneData
+from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
+from alpadreams.grpc.profiling_server import get_profiler, get_profiling_context
+from torch import Tensor, nn
 
 
 @dataclass

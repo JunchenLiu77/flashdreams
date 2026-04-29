@@ -118,10 +118,10 @@ class TestDiTNetwork:
     @pytest.mark.manual
     def test_wan_dit_t2v_1_3b_instantiation_and_checkpoint_loading(self, device):
         """Test WanDiTNetwork 1.3B T2V can be instantiated and load checkpoint."""
+        from flashdreams.core.checkpoint.load import load_checkpoint
         from flashdreams.recipes.wan.transformer.impl.network import (
             WanDiTNetwork1pt3BConfig,
         )
-        from flashdreams.core.checkpoint.load import load_checkpoint
 
         network_config = WanDiTNetwork1pt3BConfig()
         network = network_config.setup().to(device)
@@ -136,10 +136,10 @@ class TestDiTNetwork:
     @pytest.mark.manual
     def test_wan_dit_i2v_14b_instantiation_and_checkpoint_loading(self, device):
         """Test WanDiTNetwork 14B I2V can be instantiated and load checkpoint."""
+        from flashdreams.core.checkpoint.load import load_checkpoint
         from flashdreams.recipes.wan.transformer.impl.network import (
             WanDiTNetwork14BConfig,
         )
-        from flashdreams.core.checkpoint.load import load_checkpoint
 
         network_config = WanDiTNetwork14BConfig(
             cross_attn_enable_img=True, in_dim=16 + 20

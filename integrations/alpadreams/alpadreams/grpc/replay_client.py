@@ -30,11 +30,10 @@ from typing import Literal
 import grpc
 import imageio.v3 as iio
 import numpy as np
-from loguru import logger
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-
 from alpadreams.grpc.protos import video_model_pb2, video_model_pb2_grpc
 from alpadreams.grpc.recording_io import count_log_entries, read_log_entries
+from loguru import logger
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
 @dataclass

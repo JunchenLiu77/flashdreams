@@ -1,15 +1,15 @@
 from typing import Literal
 
+import mediapy
 import pytest
 import torch
-import mediapy
 
 from flashdreams.recipes.taehv import (
     AVAILABLE_TAEHV_CHECKPOINT_PATHS,
     TeahvVAEDecoderConfig,
 )
-from flashdreams.recipes.wan.autoencoder.vae import AVAILABLE_WAN_VAE_CHECKPOINT_PATHS
 from flashdreams.recipes.wan.autoencoder.vae import (
+    AVAILABLE_WAN_VAE_CHECKPOINT_PATHS,
     WanVAEDecoderConfig,
     WanVAEEncoderConfig,
 )

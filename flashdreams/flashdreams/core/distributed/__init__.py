@@ -1,10 +1,11 @@
-import os
 import ctypes
-import pynvml
 import math
+import os
+from datetime import timedelta
+
+import pynvml
 import torch
 import torch.distributed as dist
-from datetime import timedelta
 from loguru import logger
 
 

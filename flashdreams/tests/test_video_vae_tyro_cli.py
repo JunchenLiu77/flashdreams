@@ -1,13 +1,13 @@
 import pytest
-
 import tyro
+
+from flashdreams.recipes.alpadreams.encoder.pixel_shuffle import (
+    PixelShuffleVAEEncoder,
+    PixelShuffleVAEEncoderConfig,
+)
 from flashdreams.recipes.taehv import (
     TeahvVAEDecoder,
     TeahvVAEDecoderConfig,
-)
-from flashdreams.recipes.alpadreams.encoder.pixel_shuffle import (
-    PixelShuffleVAEEncoderConfig,
-    PixelShuffleVAEEncoder,
 )
 from flashdreams.recipes.wan.autoencoder.vae import WanVAEEncoder, WanVAEEncoderConfig
 

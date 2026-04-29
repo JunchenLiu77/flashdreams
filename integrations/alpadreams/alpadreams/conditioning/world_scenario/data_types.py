@@ -18,10 +18,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from alpadreams.conditioning.world_scenario.camera_base import CameraBase
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation, Slerp
-
-from alpadreams.conditioning.world_scenario.camera_base import CameraBase
 
 # ============================================================================
 # Enums for type safety

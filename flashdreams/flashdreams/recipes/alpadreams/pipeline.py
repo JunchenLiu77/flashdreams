@@ -31,14 +31,14 @@ from torch import Tensor
 
 from flashdreams.infra.decoder import DecoderAutoregressiveCache
 from flashdreams.infra.encoder import EncoderAutoregressiveCache
+from flashdreams.infra.encoder.text.cosmos_qwen import (
+    CosmosReason1TextEncoder,
+    CosmosReason1TextEncoderConfig,
+)
 from flashdreams.infra.pipeline import (
     StreamInferencePipeline,
     StreamInferencePipelineCache,
     StreamInferencePipelineConfig,
-)
-from flashdreams.infra.encoder.text.cosmos_qwen import (
-    CosmosReason1TextEncoder,
-    CosmosReason1TextEncoderConfig,
 )
 from flashdreams.recipes.alpadreams.transformer import (
     CosmosTransformerCache,
@@ -47,7 +47,6 @@ from flashdreams.recipes.wan.autoencoder.vae import (
     WanVAEEncoder,
     WanVAEEncoderConfig,
 )
-
 
 AlpadreamsPipelineCache: TypeAlias = StreamInferencePipelineCache[
     EncoderAutoregressiveCache,  # EncCacheT

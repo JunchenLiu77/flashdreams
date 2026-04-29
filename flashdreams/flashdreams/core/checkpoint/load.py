@@ -6,9 +6,9 @@ from concurrent.futures import ProcessPoolExecutor
 from typing import Literal
 from urllib.parse import unquote, urlparse
 
+import torch
 from huggingface_hub import hf_hub_download
 from loguru import logger
-import torch
 from safetensors.torch import load as load_safetensors
 from safetensors.torch import load_file as load_safetensors_file
 from safetensors.torch import save_file as save_safetensors
@@ -16,7 +16,6 @@ from torch.distributed.checkpoint import FileSystemReader
 from torch.distributed.checkpoint.default_planner import DefaultLoadPlanner
 
 from flashdreams.core.io.s3_filesystem import S3FileSystem, S3StorageReader
-
 
 _ALPADREAMS_CHECKPOINT_CREDENTIAL_PATH = "credentials/s3_checkpoint.secret"
 _ALPADREAMS_CHECKPOINT_LOCAL_CACHE_DIR = os.path.expanduser(

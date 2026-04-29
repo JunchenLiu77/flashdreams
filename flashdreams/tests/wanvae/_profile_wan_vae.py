@@ -40,6 +40,8 @@ import torch  # noqa: E402
 from flashdreams.core.checkpoint.load import load_checkpoint  # noqa: E402
 from flashdreams.recipes.wan.autoencoder.vae import (  # noqa: E402
     AVAILABLE_WAN_VAE_CHECKPOINT_PATHS,
+)
+from flashdreams.recipes.wan.autoencoder.vae import (
     WanVAE as WanVAENew,
 )
 

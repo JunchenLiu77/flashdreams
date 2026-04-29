@@ -33,7 +33,6 @@ from flashdreams.recipes.wan.autoencoder.vae import (
     WanVAEEncoderConfig,
 )
 
-
 AVAILABLE_ALPADREAMS_CHECKPOINT_PATHS: dict[str, dict[str, str | dict[str, str]]] = {
     "single_view": {
         "pixel_shuffle": "s3://flashdreams/assets/checkpoints/alpadreams/16N@cosmos_v2_2b_SF_res720p_30fps_i2v_hdmap_chunk4_pixel_shuffle_resume.pt",

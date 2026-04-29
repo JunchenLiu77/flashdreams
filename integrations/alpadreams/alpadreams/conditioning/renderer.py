@@ -11,6 +11,9 @@ from typing import Literal
 
 import ludus_renderer
 import torch
+from alpadreams.conditioning.world_scenario.data_types import SceneData
+from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
+from alpadreams.conditioning.world_scenario.pinhole import PinholeCamera
 from ludus_renderer import (
     load_clipgt_scene,
     mirror_augment_scene,
@@ -24,10 +27,6 @@ from ludus_renderer.torch import (
 from ludus_renderer.torch.ops import (
     CAMERA_TYPE_REGULAR,
 )
-
-from alpadreams.conditioning.world_scenario.data_types import SceneData
-from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
-from alpadreams.conditioning.world_scenario.pinhole import PinholeCamera
 
 
 class LudusRenderer:

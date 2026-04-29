@@ -45,7 +45,6 @@ from impl_reference_flow_unipc import (  # noqa: E402
     FlowUniPCSchedulerReference,
 )
 
-
 _FM_DENOISING = [1000, 750, 500, 250]
 _FM_SHIFT = 8.0
 

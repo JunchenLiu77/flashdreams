@@ -13,13 +13,13 @@ from flashdreams.infra.diffusion.transformer import (
     TransformerAutoregressiveCache,
     TransformerConfig,
 )
+
 from .impl.network import WanDiTNetwork14BConfig
 from .wan21 import (
     Wan21Transformer,
     Wan21TransformerCache,
     Wan21TransformerConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # HF (diffusers) → official Wan key remap. Wan 2.2 ships in a HF layout that

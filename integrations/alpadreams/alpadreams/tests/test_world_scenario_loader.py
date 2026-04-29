@@ -5,12 +5,10 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from alpadreams.conditioning.world_scenario.data_loaders import (
     list_loaders,
     load_scene,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EXAMPLE_SCENE_ZIP = REPO_ROOT / "assets" / "example_data" / "alpadreams" / "clipgt.zip"

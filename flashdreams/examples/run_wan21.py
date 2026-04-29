@@ -46,7 +46,6 @@ import numpy as np
 import torch
 from einops import rearrange
 
-
 from flashdreams.recipes.wan.config.wan21 import (
     build_wan21_i2v_14b_480p,
     build_wan21_t2v_1pt3b_480p,

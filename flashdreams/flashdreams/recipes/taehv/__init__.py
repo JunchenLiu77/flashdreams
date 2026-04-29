@@ -13,6 +13,7 @@ import torch
 from torch import Tensor
 
 from flashdreams.infra.decoder import Decoder, DecoderConfig
+
 from .impl import TAEHV, TAEHVCache
 
 AVAILABLE_TAEHV_CHECKPOINT_PATHS = {

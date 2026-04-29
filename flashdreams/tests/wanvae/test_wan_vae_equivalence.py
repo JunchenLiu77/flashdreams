@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+# Sibling module; `conftest.py` adds this directory to `sys.path`.
+import impl_reference as _impl_reference  # noqa: E402
 import pytest
 import torch
 
@@ -18,11 +20,10 @@ from flashdreams.core.checkpoint.load import load_checkpoint
 from flashdreams.recipes.wan.autoencoder import vae as _impl_new
 from flashdreams.recipes.wan.autoencoder.vae import (
     AVAILABLE_WAN_VAE_CHECKPOINT_PATHS,
+)
+from flashdreams.recipes.wan.autoencoder.vae import (
     WanVAE as WanVAENew,
 )
-
-# Sibling module; `conftest.py` adds this directory to `sys.path`.
-import impl_reference as _impl_reference  # noqa: E402
 
 WanVAELegacy = _impl_reference.WanVAE
 

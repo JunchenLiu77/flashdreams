@@ -16,11 +16,10 @@ from typing import List, Optional, Union
 import cv2
 import numpy as np
 import torch
-from shapely.geometry import Polygon
-
 from alpadreams.conditioning.world_scenario.pcd_utils import (
     interpolate_polyline_to_points,
 )
+from shapely.geometry import Polygon
 
 DEPTH_MAX = 122.5
 

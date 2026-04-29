@@ -24,7 +24,6 @@ from .impl.network import (
 )
 from .impl.rope import RotaryPositionEmbedding3D
 
-
 # ---------------------------------------------------------------------------
 # Autoregressive cache (per-rollout, mutated across AR steps)
 # ---------------------------------------------------------------------------

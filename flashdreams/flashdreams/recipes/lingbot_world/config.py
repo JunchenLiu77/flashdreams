@@ -39,6 +39,9 @@ from flashdreams.recipes.alpadreams.encoder.pixel_shuffle import (
 from flashdreams.recipes.lingbot_world.encoder.camctrl import (
     I2VCamCtrlEncoderConfig,
 )
+from flashdreams.recipes.lingbot_world.pipeline import (
+    LingbotWorldInferencePipelineConfig,
+)
 from flashdreams.recipes.lingbot_world.transformer import (
     LingbotWorldTransformerConfig,
 )
@@ -51,9 +54,6 @@ from flashdreams.recipes.wan.autoencoder.vae import (
     AVAILABLE_WAN_VAE_CHECKPOINT_PATHS,
     WanVAEDecoderConfig,
     WanVAEEncoderConfig,
-)
-from flashdreams.recipes.lingbot_world.pipeline import (
-    LingbotWorldInferencePipelineConfig,
 )
 
 AVAILABLE_LINGBOT_WORLD_CHECKPOINT_PATHS: dict[str, str] = {

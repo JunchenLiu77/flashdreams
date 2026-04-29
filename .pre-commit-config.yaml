@@ -28,7 +28,11 @@ repos:
       - alias: ruff-fix
         name: ruff fix
         id: ruff-check
-        args: [--fix]
+        args: [
+          "--fix",
+          "--select",
+          "I",
+        ]
       - alias: ruff-noqa
         name: ruff noqa
         id: ruff-check

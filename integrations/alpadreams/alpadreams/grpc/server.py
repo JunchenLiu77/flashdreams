@@ -24,22 +24,25 @@ import grpc
 import numpy as np
 import torch
 import torch.distributed as dist
-from loguru import logger
-from ludus_renderer import nvjpeg
-
-from alpadreams.conditioning.world_scenario.data_types import SceneData
-from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
-from flashdreams.core.distributed import init as distributed_init
-from flashdreams.core.distributed.context_parallel import (
-    cat_outputs_cp_object_list,
-    split_inputs_cp_object_list,
-)
 from alpadreams.conditioning.bbox_conditioned_api import (
     BboxConditionedConformanceWrapper,
     BboxConditionedState,
     BboxConditionedT2V,
 )
+from alpadreams.conditioning.renderer import LudusRenderer
+from alpadreams.conditioning.video_model_api import TextPrompt, get_av_text_prompts
+from alpadreams.conditioning.video_model_flashdreams_pipeline import (
+    FlashDreamsPipelineVideoModelAPI,
+)
+from alpadreams.conditioning.world_scenario.data_types import SceneData
+from alpadreams.conditioning.world_scenario.ftheta import FThetaCamera
+from alpadreams.grpc.profiling_server import (
+    get_profiler,
+    init_profiler,
+    profiling_context,
+)
 from alpadreams.grpc.protos import common_pb2, video_model_pb2, video_model_pb2_grpc
+from alpadreams.grpc.session_recorder import SessionRecorder
 from alpadreams.grpc.utils import (
     camera_spec_to_ftheta,
     compute_camera_poses_from_rig,
@@ -52,17 +55,14 @@ from alpadreams.grpc.utils import (
     proto_to_dict,
     trajectory_to_camera_poses,
 )
-from alpadreams.grpc.profiling_server import (
-    get_profiler,
-    init_profiler,
-    profiling_context,
+from loguru import logger
+from ludus_renderer import nvjpeg
+
+from flashdreams.core.distributed import init as distributed_init
+from flashdreams.core.distributed.context_parallel import (
+    cat_outputs_cp_object_list,
+    split_inputs_cp_object_list,
 )
-from alpadreams.grpc.session_recorder import SessionRecorder
-from alpadreams.conditioning.video_model_api import TextPrompt, get_av_text_prompts
-from alpadreams.conditioning.video_model_flashdreams_pipeline import (
-    FlashDreamsPipelineVideoModelAPI,
-)
-from alpadreams.conditioning.renderer import LudusRenderer
 
 VERBOSE = False
 

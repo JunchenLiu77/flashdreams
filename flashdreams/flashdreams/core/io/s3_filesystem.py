@@ -5,7 +5,7 @@ import io
 import json
 import os
 from contextlib import contextmanager
-from typing import Generator, Union, Any
+from typing import Any, Generator, Union
 from urllib.parse import urlparse
 
 import boto3

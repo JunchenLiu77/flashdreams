@@ -33,7 +33,6 @@ deviate should construct :class:`Wan21PipelineConfig` directly.
 
 from __future__ import annotations
 
-
 from flashdreams.infra.diffusion.model import DiffusionModelConfig
 from flashdreams.infra.diffusion.scheduler import (
     FlowMatchUniPCSchedulerConfig,
@@ -49,8 +48,8 @@ from flashdreams.recipes.wan.autoencoder.vae import (
 )
 from flashdreams.recipes.wan.pipeline import WanInferencePipelineConfig
 from flashdreams.recipes.wan.transformer.impl.network import (
-    WanDiTNetwork14BConfig,
     WanDiTNetwork1pt3BConfig,
+    WanDiTNetwork14BConfig,
 )
 from flashdreams.recipes.wan.transformer.wan21 import Wan21TransformerConfig
 

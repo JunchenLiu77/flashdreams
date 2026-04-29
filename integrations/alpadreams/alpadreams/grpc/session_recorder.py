@@ -9,10 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import BinaryIO
 
-from loguru import logger
-
 from alpadreams.grpc.protos import common_pb2, video_model_pb2
 from alpadreams.grpc.recording_io import write_log_entry
+from loguru import logger
 
 
 class SessionRecorder:

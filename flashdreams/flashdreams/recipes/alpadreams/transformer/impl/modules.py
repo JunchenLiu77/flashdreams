@@ -3,12 +3,11 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-from torch import Tensor
 from einops import rearrange, repeat
+from torch import Tensor
 from torch.distributed import ProcessGroup
 
 from flashdreams.core.attention import BlockKVCache, RingAttention
-
 from flashdreams.recipes.wan.transformer.impl.rope import apply_rope_freqs
 
 

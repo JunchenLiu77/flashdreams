@@ -22,7 +22,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------
 # Inner solver (verbatim from flow_match/impl.py).
 # ---------------------------------------------------------------------------

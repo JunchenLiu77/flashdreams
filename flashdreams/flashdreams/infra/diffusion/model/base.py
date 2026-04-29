@@ -15,8 +15,8 @@ from flashdreams.infra.diffusion.scheduler import (
     SchedulerConfig,
 )
 from flashdreams.infra.diffusion.transformer import (
-    TransformerCacheT,
     Transformer,
+    TransformerCacheT,
     TransformerConfig,
 )
 

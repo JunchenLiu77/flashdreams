@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
-import math
 import torch
-from torch import Tensor
 from einops import rearrange
+from torch import Tensor
 
 from flashdreams.infra.encoder import (
     Encoder,
     EncoderConfig,
 )
+from flashdreams.recipes.alpadreams.encoder.pixel_shuffle import (
+    PixelShuffleVAEEncoderCache,
+    PixelShuffleVAEEncoderConfig,
+)
 from flashdreams.recipes.wan.autoencoder.i2v import (
     I2VCtrl,
-    I2VCtrlEncoderConfig,
     I2VCtrlEncoderCache,
+    I2VCtrlEncoderConfig,
 )
-from flashdreams.recipes.alpadreams.encoder.pixel_shuffle import (
-    PixelShuffleVAEEncoderConfig,
-    PixelShuffleVAEEncoderCache,
-)
+
 from .utils import (
     compute_relative_poses_causal,
     get_plucker_embeddings,

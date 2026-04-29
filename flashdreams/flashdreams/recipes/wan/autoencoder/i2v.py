@@ -11,6 +11,7 @@ from flashdreams.infra.encoder import (
     Encoder,
     EncoderConfig,
 )
+
 from .vae import (
     WanVAECache,
     WanVAEEncoder,

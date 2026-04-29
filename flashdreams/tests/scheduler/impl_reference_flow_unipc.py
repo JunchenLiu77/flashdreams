@@ -12,11 +12,10 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-from torch import Tensor
-
 from _flow_unipc_inner import (  # type: ignore[import-not-found]
     FlowUniPCMultistepScheduler as _FlowUniPCMultistepScheduler,
 )
+from torch import Tensor
 
 
 @dataclass(kw_only=True)

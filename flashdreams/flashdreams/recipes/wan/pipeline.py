@@ -8,11 +8,6 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from flashdreams.infra.pipeline import (
-    StreamInferencePipeline,
-    StreamInferencePipelineCache,
-    StreamInferencePipelineConfig,
-)
 from flashdreams.infra.encoder.image.clip import (
     CLIPImageEncoder,
     CLIPImageEncoderConfig,
@@ -20,6 +15,11 @@ from flashdreams.infra.encoder.image.clip import (
 from flashdreams.infra.encoder.text.umt5 import (
     UMT5TextEncoder,
     UMT5TextEncoderConfig,
+)
+from flashdreams.infra.pipeline import (
+    StreamInferencePipeline,
+    StreamInferencePipelineCache,
+    StreamInferencePipelineConfig,
 )
 from flashdreams.recipes.wan.autoencoder.i2v import I2VCtrlEncoderCache
 from flashdreams.recipes.wan.autoencoder.vae import WanVAECache

@@ -1,7 +1,8 @@
 """Unit tests for checkpoint loading utilities."""
 
-import tempfile
 import os
+import tempfile
+
 import torch
 
 from flashdreams.core.checkpoint.load import load_checkpoint

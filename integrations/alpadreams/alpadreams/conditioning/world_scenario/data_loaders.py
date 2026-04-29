@@ -18,9 +18,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, Union
 
-from loguru import logger
-
 from alpadreams.conditioning.world_scenario.data_types import SceneData
+from loguru import logger
 
 
 class SceneDataLoader(ABC):

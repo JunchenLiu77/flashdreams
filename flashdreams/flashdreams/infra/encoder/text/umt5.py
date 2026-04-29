@@ -12,8 +12,8 @@ import torch
 from torch import Tensor
 from transformers import AutoTokenizer, UMT5EncoderModel
 
-from flashdreams.infra.encoder import Encoder, EncoderConfig
 from flashdreams.core.io.hf import should_use_local_files_only
+from flashdreams.infra.encoder import Encoder, EncoderConfig
 
 
 def prompt_clean(text: str) -> str:

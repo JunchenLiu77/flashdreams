@@ -1,7 +1,6 @@
+import copy
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
-
-import copy
 
 
 # Pretty printing class

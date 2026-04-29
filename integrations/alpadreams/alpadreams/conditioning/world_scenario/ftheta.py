@@ -15,10 +15,9 @@ from typing import Any, Dict, Optional, TypeVar
 
 import numpy as np
 import torch
+from alpadreams.conditioning.world_scenario.camera_base import CameraBase
 from numpy.polynomial.polynomial import Polynomial
 from scipy.optimize import curve_fit
-
-from alpadreams.conditioning.world_scenario.camera_base import CameraBase
 
 CropParams = TypeVar("CropParams")
 ScaleParams = TypeVar("ScaleParams")

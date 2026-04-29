@@ -13,15 +13,13 @@ import grpc
 import numpy as np
 import pytest
 import torch
-from PIL import Image
-
 from alpadreams.grpc.protos import (
     camera_pb2,
     common_pb2,
     video_model_pb2,
     video_model_pb2_grpc,
 )
-
+from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EXAMPLE_SCENE_ZIP = REPO_ROOT / "assets" / "example_data" / "alpadreams" / "clipgt.zip"

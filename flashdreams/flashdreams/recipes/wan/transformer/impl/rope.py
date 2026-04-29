@@ -1,4 +1,5 @@
 from typing import TypeVar
+
 import torch
 from einops import repeat
 from torch import Tensor
@@ -8,10 +9,14 @@ from torch.distributed.tensor.device_mesh import DeviceMesh
 from flashdreams.core.distributed.context_parallel import split_inputs_cp
 
 try:
-    from transformer_engine.pytorch.attention.rope import apply_rotary_pos_emb  # type: ignore[import-untyped]
+    from transformer_engine.pytorch.attention.rope import (
+        apply_rotary_pos_emb,  # type: ignore[import-untyped]
+    )
 except (ImportError, OSError):
     try:
-        from transformer_engine.pytorch.attention import apply_rotary_pos_emb  # type: ignore[import-untyped]
+        from transformer_engine.pytorch.attention import (
+            apply_rotary_pos_emb,  # type: ignore[import-untyped]
+        )
     except (ImportError, OSError):
         from loguru import logger
 

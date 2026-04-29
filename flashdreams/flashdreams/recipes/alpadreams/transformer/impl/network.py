@@ -13,12 +13,12 @@ from flashdreams.core.distributed.context_parallel import (
 from flashdreams.infra.config import InstantiateConfig
 
 from .modules import (
+    Block,
+    BlockCache,
     FinalLayer,
     PatchEmbed,
     TimestepEmbedding,
     Timesteps,
-    Block,
-    BlockCache,
 )
 
 

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import torch
-from loguru import logger
-from torch import Tensor
-
 from alpadreams.conditioning.video_model_api import (
     BaseLatentCache,
     TextPrompt,
     VideoModelAPI,
 )
+from loguru import logger
+from torch import Tensor
+
 from flashdreams.infra.diffusion.model import DiffusionModelConfig
 from flashdreams.infra.diffusion.scheduler.fm import FlowMatchSchedulerConfig
 from flashdreams.infra.encoder.text.cosmos_qwen import (

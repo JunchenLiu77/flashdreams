@@ -39,20 +39,19 @@ from flashdreams.infra.diffusion.transformer import (
     TransformerAutoregressiveCache,
     TransformerConfig,
 )
-from .impl.context_parallel import (
-    HierarchicalCPGroups,
-    create_hierarchical_cp_groups,
-)
 from flashdreams.recipes.wan.transformer.impl.rope import (
     RotaryPositionEmbedding3D,
 )
 
+from .impl.context_parallel import (
+    HierarchicalCPGroups,
+    create_hierarchical_cp_groups,
+)
 from .impl.network import (
     CosmosDiTNetwork,
     CosmosDiTNetworkCache,
     CosmosDiTNetworkConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Default camera names / view index mapping (matches projects/alpadreams)
