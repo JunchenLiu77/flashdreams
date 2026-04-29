@@ -127,6 +127,12 @@ class AlpadreamsPipeline(
         )
         self._decoder_temporal_compression: int = decoder.TEMPORAL_COMPRESSION_RATIO
 
+        # Take the view split outside of the transformer, so that VAE does not do duplicated job.
+        self.V_group = transformer.cp_groups.V_group
+        self.V_size = transformer.cp_groups.V_size
+        transformer.cp_groups.V_group = None
+        transformer.config.num_views //= self.V_size
+
     @property
     def device(self) -> torch.device:
         return self.diffusion_model.device
