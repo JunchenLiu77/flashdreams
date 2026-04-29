@@ -14,18 +14,20 @@ import gc
 import os
 import threading
 import time
+import traceback
 import uuid
 import warnings
 from concurrent import futures
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 import grpc
 import numpy as np
 import torch
 import torch.distributed as dist
 from alpadreams.conditioning.conditioning_wrapper import (
+    AV_POSITIVE_PROMPT,
     AlpadreamsConditioningState,
     AlpadreamsConditioningWrapper,
     TextPrompt,
@@ -186,9 +188,8 @@ def capture_exceptions(func: Callable) -> Callable:
             return func(*args, **kwargs)
         except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
-            # print stack trace
-            import traceback
 
+            # print stack trace
             traceback.print_exc()
             raise
 
@@ -250,7 +251,7 @@ def build_alpadreams_conditioning_wrapper(
 class WorldModelEngine:
     def __init__(
         self,
-        device: str = "cuda",
+        device: torch.device | str = torch.device("cuda:0"),
         # image encoding related
         output_format: str = "png",
         jpeg_quality: int = 90,
@@ -293,6 +294,10 @@ class WorldModelEngine:
 
         # Save configurations
         self.device = torch.device(device)
+        if self.device.type != "cuda":
+            raise ValueError(f"CUDA device is required, got {self.device}")
+        if self.device.index is None:
+            self.device = torch.device("cuda:0")
         self.n_cameras = n_cameras
         self.seed_for_every_rollout_default = seed_for_every_rollout
 
@@ -486,7 +491,6 @@ class WorldModelEngine:
                 hdmap_parquets,
                 camera_names=camera_names,
                 target_resolution_hw=(res_H, res_W),
-                device=self.device,
             )
         logger.info(
             f"[Rank {self.rank}] Loaded scene: {scene_data.scene_id}, num_frames: {scene_data.num_frames}"
@@ -857,7 +861,7 @@ class WorldModelService(
 
     def __init__(
         self,
-        device: str = "cuda",
+        device: torch.device | str = torch.device("cuda:0"),
         output_format: str = "png",
         jpeg_quality: int = 90,
         recording_dir: Path | str | None = None,
@@ -881,7 +885,7 @@ class WorldModelService(
         Initialize the World Model gRPC service.
 
         Args:
-            device: Device to run inference on ("cuda" or "cpu").
+            device: CUDA device used for inference.
             output_format: Output image format ("png" or "jpeg").
             jpeg_quality: JPEG quality (1-100) if using JPEG format.
             recording_dir: Directory to save session recordings (None to disable).
@@ -1045,7 +1049,7 @@ class WorldModelService(
             ]
             logger.info(f"Using client prompt: {request.text_prompt.positive[:50]}...")
         else:
-            text_prompts = get_av_text_prompts(batch_size=1, device=self.device)
+            text_prompts = [TextPrompt(positive=AV_POSITIVE_PROMPT)]
             logger.info("Using default AV prompt")
 
         # 3. Parse debug options
@@ -1363,7 +1367,10 @@ class SessionState:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="gRPC server for bbox-conditioned video generation"
+        description=(
+            "gRPC server for bbox-conditioned video generation. "
+            "CUDA is required and context parallel size is derived from world size."
+        )
     )
     parser.add_argument(
         "--host",
@@ -1376,12 +1383,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=50051,
         help="Port to bind the server to (default: 50051)",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda",
-        help="Device to run inference on (default: cuda)",
     )
     parser.add_argument(
         "--max_workers",
@@ -1441,12 +1442,6 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Sink size in latent frames. Default: 3 for multi-view, 0 for single-view."
         ),
-    )
-    parser.add_argument(
-        "--context_parallel_size",
-        type=int,
-        default=1,
-        help="Context parallel world size. Should be multiple of or divisor of n_cameras.",
     )
     parser.add_argument(
         "--seed_for_every_rollout",
@@ -1517,53 +1512,48 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def initialize_distributed(
-    context_parallel_size: int, n_cameras: int, device: Literal["cuda", "cpu"]
-) -> tuple[torch.device, int, int]:
-    # Sanity check context parallel size
-    if context_parallel_size > 1:
-        if "RANK" not in os.environ:
-            raise RuntimeError(
-                "Context parallel requires torch.distributed.run --nproc_per_node=N"
-            )
-        if (
-            context_parallel_size % n_cameras != 0
-            and n_cameras % context_parallel_size != 0
-        ):
-            raise ValueError(
-                f"CP size {context_parallel_size} must divide n_cameras {n_cameras} or vice versa"
-            )
+def initialize_distributed(n_cameras: int) -> tuple[torch.device, int, int]:
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is required for inference in the Alpadreams gRPC server."
+        )
 
-    # Initialize distributed
-    if context_parallel_size > 1:
+    has_rank = "RANK" in os.environ
+    has_world_size = "WORLD_SIZE" in os.environ
+    if has_rank != has_world_size:
+        raise RuntimeError(
+            "Distributed launch expects both RANK and WORLD_SIZE to be set."
+        )
+
+    distributed_launch = has_rank and has_world_size
+    if distributed_launch:
         distributed_init()
         world_rank = dist.get_rank()
         world_size = dist.get_world_size()
     else:
         world_rank = 0
         world_size = 1
-    assert context_parallel_size == world_size, (
-        f"Error: context_parallel_size ({context_parallel_size}) must match world_size ({world_size})"
-    )
+
+    context_parallel_size = world_size
+    if (
+        context_parallel_size % n_cameras != 0
+        and n_cameras % context_parallel_size != 0
+    ):
+        raise ValueError(
+            f"CP size {context_parallel_size} must divide n_cameras {n_cameras} or vice versa"
+        )
+
+    device_count = torch.cuda.device_count()
+    if device_count < 1:
+        raise RuntimeError("CUDA device count must be >= 1 for inference.")
+    local_rank = world_rank % device_count
+    torch_device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(torch_device)
 
     logger.info(
         f"Rank {world_rank} initialized distributed with context_parallel_size {context_parallel_size}"
     )
-
-    # Initialize device properly, accounting for context parallel
-    if device == "cuda":
-        if context_parallel_size > 1:
-            local_rank = dist.get_rank() % torch.cuda.device_count()
-            torch_device = torch.device(f"cuda:{local_rank}")
-            torch.cuda.set_device(torch_device)
-        else:
-            torch_device = torch.device("cuda:0")
-    elif device == "cpu":
-        torch_device = torch.device(device)
-    else:
-        raise ValueError(f"Invalid device: {device}")
-
-    return torch_device, world_rank, world_size
+    return torch_device, world_rank, context_parallel_size
 
 
 def main() -> None:
@@ -1576,9 +1566,7 @@ def main() -> None:
     # Parse denoising steps from comma-separated string
     denoising_step_list = [int(x.strip()) for x in args.denoising_steps.split(",")]
 
-    device, world_rank, world_size = initialize_distributed(
-        args.context_parallel_size, args.n_cameras, args.device
-    )
+    device, world_rank, context_parallel_size = initialize_distributed(args.n_cameras)
     logger.info(
         "Using flashdreams pipeline backend; checkpoints are loaded lazily via flashdreams checkpoint loader."
     )
@@ -1598,14 +1586,14 @@ def main() -> None:
         atexit.register(save_profiling_data)
 
     # Common model kwargs shared between WorldModelService (rank 0) and WorldModelEngine (other ranks)
-    model_kwargs = dict(
+    model_kwargs: dict[str, Any] = dict(
         device=device,
         output_format=args.output_format,
         jpeg_quality=args.jpeg_quality,
         n_cameras=args.n_cameras,
         local_attn_size=args.local_attn_size,
         sink_size=args.sink_size,
-        context_parallel_size=args.context_parallel_size,
+        context_parallel_size=context_parallel_size,
         resolution=args.resolution,
         encode_with_pixel_shuffle=args.encode_with_pixel_shuffle,
         denoising_step_list=denoising_step_list,
@@ -1618,6 +1606,8 @@ def main() -> None:
         no_tae=args.no_tae,
     )
 
+    server: grpc.Server | None = None
+    service: WorldModelService | None = None
     if world_rank == 0:  # Only rank 0 runs the HTTP server
         logger.info("=" * 80)
         logger.info("Starting gRPC World Model Service")
@@ -1670,7 +1660,7 @@ def main() -> None:
             logger.error(f"Error in server.wait_for_termination(): {e}")
             raise e
 
-        send_signal(ControlSignal.EXIT, torch.device(f"cuda:{world_rank}"))
+        send_signal(ControlSignal.EXIT, device)
 
     else:  # non-rank 0 processes
         engine = WorldModelEngine(
@@ -1682,7 +1672,7 @@ def main() -> None:
             logger.critical(f"Shutting down engine on rank {world_rank}...")
 
     # Release CUDA graphs before destroying process group (otherwise may pin NCCL communicator memory)
-    if world_rank == 0:
+    if world_rank == 0 and server is not None and service is not None:
         del server
         del service
     else:
@@ -1693,7 +1683,7 @@ def main() -> None:
     torch.cuda.synchronize()
 
     # Wait for rank 0 to finish saving before destroying process group
-    if args.context_parallel_size > 1:
+    if dist.is_initialized():
         dist.barrier()
         logger.info(
             f"[Rank {world_rank}] All ranks synchronized, destroying process group..."

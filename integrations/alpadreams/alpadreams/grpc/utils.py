@@ -133,7 +133,6 @@ def load_static_world_from_zip_bytes(
     hdmap_zip_bytes: bytes,
     camera_names: list[str],
     target_resolution_hw: tuple[int, int],
-    device: torch.device = torch.device("cuda:0"),
     perform_mirror_augment: bool = False,
 ) -> SceneData:
     """

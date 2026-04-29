@@ -66,16 +66,6 @@ AV_POSITIVE_PROMPT = (
 )
 
 
-def get_av_text_prompts(
-    batch_size: int = 1,
-    device: torch.device | str = "cuda",
-    text_prompt: str = AV_POSITIVE_PROMPT,
-) -> list[TextPrompt]:
-    """Get autonomous driving text prompts."""
-    del device
-    return [TextPrompt(positive=text_prompt)] * batch_size
-
-
 @dataclass
 class AlpadreamsConditioningState:
     """State for generation, including renderer and pipeline state."""

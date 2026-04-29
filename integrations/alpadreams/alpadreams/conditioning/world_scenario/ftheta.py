@@ -324,7 +324,7 @@ class FThetaCamera(CameraBase):
             poly (np.ndarray): the polynomial of the FTheta model. Usually 5 coefficients.
             linear_cde (np.ndarray): the linear constrain matrix of the FTheta model. Usually 3 coefficients.
                 A = [[c, d], [e, 1]]. A is used in forward (ray2pixel) mapping
-            device (str): the device to use. if None, use cuda if available, otherwise cpu.
+            device (str): the device to use. If None, defaults to "cuda".
         """
         if linear_cde is None:
             linear_cde = np.array([1, 0, 0], dtype=np.float32)
@@ -337,13 +337,7 @@ class FThetaCamera(CameraBase):
         self._center = np.asarray([cx, cy], dtype=np.float32)
         self._width = int(width)
         self._height = int(height)
-        self.device = (
-            device
-            if device is not None
-            else "cuda"
-            if torch.cuda.is_available()
-            else "cpu"
-        )
+        self.device = device if device is not None else "cuda"
         self.dtype = dtype
         self.reference_poly = "bw" if is_bw_poly else "fw"
 
@@ -679,13 +673,7 @@ class FThetaCamera(CameraBase):
         u, v = torch.meshgrid(u, v, indexing="xy")  # must pass indexing='xy'
         uv_coords = torch.stack([u, v], dim=-1).reshape(-1, 2)  # shape (H*W, 2)
 
-        # Use GPU version directly if on GPU
-        if self.device == "cuda":
-            rays, _ = self.pixel2ray_torch(uv_coords)
-        else:
-            # CPU path
-            rays = self.pixel2ray(uv_coords.cpu().numpy())[0]
-            rays = torch.tensor(rays, device=self.device, dtype=self.dtype)
+        rays, _ = self.pixel2ray_torch(uv_coords)
 
         rays = rays.reshape(self.height, self.width, 3)
         return rays

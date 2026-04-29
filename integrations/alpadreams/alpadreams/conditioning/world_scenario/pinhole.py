@@ -60,7 +60,7 @@ class PinholeCamera(CameraBase):
         self.dtype = dtype
 
         if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.device = "cuda"
         else:
             self.device = device
         self._intrinsics = np.array([fx, fy, cx, cy, w, h], dtype=np.float32)

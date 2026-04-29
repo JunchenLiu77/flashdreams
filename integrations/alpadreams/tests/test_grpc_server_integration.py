@@ -11,8 +11,6 @@ from pathlib import Path
 
 import grpc
 import numpy as np
-import pytest
-import torch
 from alpadreams.grpc.protos import (
     camera_pb2,
     common_pb2,
@@ -151,8 +149,6 @@ def test_grpc_server_start_render_close_roundtrip(
         "127.0.0.1",
         "--port",
         str(port),
-        "--device",
-        "cuda",
         "--output_format",
         "jpeg",
         "--n_cameras",
