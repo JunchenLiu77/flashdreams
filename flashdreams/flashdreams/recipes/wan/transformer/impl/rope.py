@@ -15,7 +15,9 @@ except (ImportError, OSError):
     except (ImportError, OSError):
         from loguru import logger
 
-        logger.info("transformer_engine is unavailable; using pure PyTorch RoPE fallback.")
+        logger.info(
+            "transformer_engine is unavailable; using pure PyTorch RoPE fallback."
+        )
 
         def _rotate_half(x: Tensor, interleaved: bool = False) -> Tensor:
             if interleaved:
@@ -58,6 +60,7 @@ except (ImportError, OSError):
             cos = torch.cos(rope).to(dtype=t.dtype)
             sin = torch.sin(rope).to(dtype=t.dtype)
             return t * cos + _rotate_half(t, interleaved) * sin
+
 
 T = TypeVar("T")
 

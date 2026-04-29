@@ -9,6 +9,18 @@ on:
       - '**'
 
 jobs:
+  lint:
+    runs-on: linux-amd64-cpu8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Run linter checks
+        run: uv run --only-group lint pre-commit run -a
+
   cpu:
     runs-on: linux-amd64-cpu8
     steps:
