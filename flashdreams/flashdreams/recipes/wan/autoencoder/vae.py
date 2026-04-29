@@ -483,7 +483,7 @@ class WanVAE(nn.Module):
         vae_path: str,
         use_lightvae: bool = False,
         use_cuda_graph: bool = True,
-        use_compile: bool = False,
+        use_compile: bool = True,
         warmup_iters: int = 2,
         enable_encoder: bool = True,
         enable_decoder: bool = True,

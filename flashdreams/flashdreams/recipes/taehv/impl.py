@@ -1,374 +1,402 @@
-#!/usr/bin/env python3
-"""
-Tiny AutoEncoder for Hunyuan Video
-(DNN for encoding / decoding videos to Hunyuan Video's latent space)
+"""Tiny AutoEncoder for Hunyuan Video (TAEHV) -- streaming causal decode.
+
+Decode-only slim port: the TAEHV encoder side is unused in our pipelines and
+not included here. Encoder weights present in the checkpoint are dropped via
+``strict=False`` at load time.
+
+Per-rollout dispatch (when ``use_cuda_graph=True``):
+    - Rollout 1 (cache empty): bare module / wrapper.drain -- runs the
+      decoder eagerly through the wrapper's static buffer so any
+      Inductor / triton autotunes happen on the eager path (illegal
+      during graph capture).
+    - Rollout 2+ (cache populated): wrapper.__call__ -- ``warmup_iters``
+      eager warmups, then capture, then pure replay for every
+      same-shape body chunk.
+
+Example::
+
+    decoder = TAEHV(checkpoint_path="...").to(device, torch.bfloat16)
+    cache = decoder.prepare_cache()
+    x_first = decoder.decode(z_first, cache=cache)   # 5 frames (trimmed)
+    x_body  = decoder.decode(z_body,  cache=cache)   # 8 frames
 """
 
-from collections import namedtuple
-from dataclasses import dataclass
-from typing import List, Optional
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from tqdm.auto import tqdm
 
 from flashdreams.core.checkpoint.load import load_checkpoint
+from flashdreams.infra.cuda_graph import CUDAGraphWrapper
 from flashdreams.infra.decoder import DecoderAutoregressiveCache
 
-DecoderResult = namedtuple("DecoderResult", ("frame", "memory"))
-TWorkItem = namedtuple("TWorkItem", ("input_tensor", "block_index"))
+
+@dataclass
+class TAEHVCache(DecoderAutoregressiveCache):
+    """Streaming decoder cache; one slot per ``MemBlock`` keyed by ``id(module)``.
+
+    Slots hold a single ``[B, 1, C, H, W]`` frame -- the last input frame
+    of the previous chunk -- which becomes the rolled-in left context
+    for the next chunk's MemBlock. Slots have stable storage addresses
+    after the first chunk so CUDA-graph replay can write through them
+    in place.
+    """
+
+    dec_state: Dict[int, torch.Tensor] = field(default_factory=dict)
 
 
-def conv(n_in, n_out, **kwargs):
+def _set_or_copy(
+    state: Dict[int, torch.Tensor], key: int, new_value: torch.Tensor
+) -> None:
+    """Write ``new_value`` into ``state[key]``: in-place ``copy_`` once the
+    slot exists at the matching shape, else allocate a fresh clone.
+
+    Pointer stability is required for CUDA-graph capture (kernels
+    reference the slot's storage address).
+    """
+    cur = state.get(key)
+    if cur is not None and cur.shape == new_value.shape:
+        cur.copy_(new_value)
+    else:
+        state[key] = new_value.clone()
+
+
+def _conv(n_in: int, n_out: int, **kwargs) -> nn.Conv2d:
     return nn.Conv2d(n_in, n_out, 3, padding=1, **kwargs)
 
 
 class Clamp(nn.Module):
-    def forward(self, x):
+    """Soft saturating clamp -- ``tanh(x/3) * 3`` (used at decoder input)."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.tanh(x / 3) * 3
 
 
 class MemBlock(nn.Module):
-    def __init__(self, n_in, n_out, act_func):
+    """Residual block with a 1-frame temporal-left memory slot.
+
+    The forward concatenates ``x`` with a 1-step time-shifted copy
+    (``past``) along channels, runs a 3-conv stack, and adds the ``skip``
+    projection. :meth:`cache_step` advances the per-instance slot:
+    snapshot the last input frame -> next call uses it as ``past``.
+    """
+
+    def __init__(self, n_in: int, n_out: int, act_func: nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
-            conv(n_in * 2, n_out),
+            _conv(n_in * 2, n_out),
             act_func,
-            conv(n_out, n_out),
+            _conv(n_out, n_out),
             act_func,
-            conv(n_out, n_out),
+            _conv(n_out, n_out),
         )
         self.skip = (
             nn.Conv2d(n_in, n_out, 1, bias=False) if n_in != n_out else nn.Identity()
         )
         self.act = act_func
 
-    def forward(self, x, past):
+    def forward(self, x: torch.Tensor, past: torch.Tensor) -> torch.Tensor:
         return self.act(self.conv(torch.cat([x, past], 1)) + self.skip(x))
 
+    def cache_step(
+        self, x: torch.Tensor, state: Dict[int, torch.Tensor], batch: int
+    ) -> torch.Tensor:
+        """Apply with streaming left-context drawn from ``state``.
 
-class TPool(nn.Module):
-    def __init__(self, n_f, stride):
-        super().__init__()
-        self.stride = stride
-        self.conv = nn.Conv2d(n_f * stride, n_f, 1, bias=False)
-
-    def forward(self, x):
-        _NT, C, H, W = x.shape
-        return self.conv(x.reshape(-1, self.stride * C, H, W))
+        Builds ``past`` by rolling ``x`` right one step, padded with the
+        previous chunk's last frame (or zeros on the first chunk). On
+        steady-state calls only the cached single-frame slot is read,
+        matching the legacy ``cache_mem[i] = _x; ... prev_mem[:, -1:]``
+        access pattern bit-for-bit.
+        """
+        key = id(self)
+        bt, c, h, w = x.shape
+        t = bt // batch
+        x5 = x.view(batch, t, c, h, w)
+        prev = state.get(key)
+        if prev is None:
+            past = F.pad(x5, (0, 0, 0, 0, 0, 0, 1, 0))[:, :t]
+        else:
+            past = torch.cat([prev, x5[:, :-1]], dim=1)
+        out = self.forward(x, past.reshape(bt, c, h, w))
+        _set_or_copy(state, key, x5[:, -1:])
+        return out
 
 
 class TGrow(nn.Module):
-    def __init__(self, n_f, stride):
+    """Temporal upsample by ``stride``: 1x1 conv expands channels, then
+    reshape splits the new channel chunks into consecutive timesteps.
+
+    Stateless across streaming chunks (each chunk's frames are upsampled
+    independently)."""
+
+    def __init__(self, n_f: int, stride: int):
         super().__init__()
         self.stride = stride
         self.conv = nn.Conv2d(n_f, n_f * stride, 1, bias=False)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         _NT, C, H, W = x.shape
-        x = self.conv(x)
-        return x.reshape(-1, C, H, W)
+        return self.conv(x).reshape(-1, C, H, W)
 
 
-def apply_model_with_memblocks(
-    model, x, parallel, show_progress_bar, cache_mem: List | None = None
-):
+class Decoder(nn.Module):
+    """TAEHV decoder body, owned by :class:`TAEHV`.
+
+    Input: ``[B, T, C_z, H, W]`` latent (T == ``z`` time dim).
+    Output: ``[B, T_out, C_img * patch**2, H_out, W_out]`` raw frames
+    (no clamp / pixel-shuffle / trim -- those happen in
+    :meth:`TAEHV.decode`).
     """
-    Apply a sequential model with memblocks to the given input.
-    Args:
-    - model: nn.Sequential of blocks to apply
-    - x: input data, of dimensions NTCHW
-    - parallel: if True, parallelize over timesteps (fast but uses O(T) memory)
-        if False, each timestep will be processed sequentially (slow but uses O(1) memory)
-    - show_progress_bar: if True, enables tqdm progressbar display
 
-    Returns NTCHW tensor of output data.
-    """
-    assert x.ndim == 5, f"TAEHV operates on NTCHW tensors, but got {x.ndim}-dim tensor"
-    N, T, C, H, W = x.shape
-    if parallel:
-        x = x.reshape(N * T, C, H, W)
-        # parallel over input timesteps, iterate over blocks
-        for idx, b in enumerate(model):
-            if isinstance(b, MemBlock):
-                prev_mem = cache_mem[idx]
-                NT, C, H, W = x.shape
-                T = NT // N
-                _x = x.reshape(N, T, C, H, W)
-                if prev_mem is None:
-                    # roll to the right and left pad with zeros
-                    curr_mem = F.pad(_x, (0, 0, 0, 0, 0, 0, 1, 0), value=0)[:, :T]
-                else:
-                    # roll to the right and left pad with the last frame in previous mem
-                    curr_mem = torch.cat([prev_mem[:, -1:], _x[:, :-1]], dim=1)
-                x = b(x, curr_mem.reshape(x.shape))
-                cache_mem[idx] = _x
-            else:
-                x = b(x)
-        NT, C, H, W = x.shape
-        T = NT // N
-        x = x.view(N, T, C, H, W)
-    else:
-        # TODO(oboerbohan): at least on macos this still gradually uses more memory during decode...
-        # need to fix :(
-        out = []
-        # iterate over input timesteps and also iterate over blocks.
-        # because of the cursed TPool/TGrow blocks, this is not a nested loop,
-        # it's actually a ***graph traversal*** problem! so let's make a queue
-        work_queue = [
-            TWorkItem(xt, 0)
-            for t, xt in enumerate(x.reshape(N, T * C, H, W).chunk(T, dim=1))
-        ]
-        # in addition to manually managing our queue, we also need to manually manage our progressbar.
-        # we'll update it for every source node that we consume.
-        progress_bar = tqdm(range(T), disable=not show_progress_bar)
-        # we'll also need a separate addressable memory per node as well
-        mem = [None] * len(model) if cache_mem is None else cache_mem
-        while work_queue:
-            xt, i = work_queue.pop(0)
-            if i == 0:
-                # new source node consumed
-                progress_bar.update(1)
-            if i == len(model):
-                # reached end of the graph, append result to output list
-                out.append(xt)
-            else:
-                # fetch the block to process
-                b = model[i]
-                if isinstance(b, MemBlock):
-                    # mem blocks are simple since we're visiting the graph in causal order
-                    if mem[i] is None:
-                        xt_new = b(xt, xt * 0)
-                        mem[i] = xt
-                    else:
-                        xt_new = b(xt, mem[i])
-                        mem[i].copy_(xt)
-                        # ^ inplace might reduce mysterious pytorch memory allocations? doesn't help though
-                    # add successor to work queue
-                    work_queue.insert(0, TWorkItem(xt_new, i + 1))
-                elif isinstance(b, TPool):
-                    # pool blocks are miserable
-                    if mem[i] is None:
-                        mem[i] = []  # pool memory is itself a queue of inputs to pool
-                    mem[i].append(xt)
-                    if len(mem[i]) > b.stride:
-                        # pool mem is in invalid state, we should have pooled before this
-                        raise ValueError("???")
-                    elif len(mem[i]) < b.stride:
-                        # pool mem is not yet full, go back to processing the work queue
-                        pass
-                    else:
-                        # pool mem is ready, run the pool block
-                        N, C, H, W = xt.shape
-                        xt = b(torch.cat(mem[i], 1).view(N * b.stride, C, H, W))
-                        # reset the pool mem
-                        mem[i] = []
-                        # add successor to work queue
-                        work_queue.insert(0, TWorkItem(xt, i + 1))
-                elif isinstance(b, TGrow):
-                    xt = b(xt)
-                    NT, C, H, W = xt.shape
-                    # each tgrow has multiple successor nodes
-                    for xt_next in reversed(
-                        xt.view(N, b.stride * C, H, W).chunk(b.stride, 1)
-                    ):
-                        # add successor to work queue
-                        work_queue.insert(0, TWorkItem(xt_next, i + 1))
-                else:
-                    # normal block with no funny business
-                    xt = b(xt)
-                    # add successor to work queue
-                    work_queue.insert(0, TWorkItem(xt, i + 1))
-        progress_bar.close()
-        x = torch.stack(out, 1)
-    return x
-
-
-@dataclass
-class TAEHVCache(DecoderAutoregressiveCache):
-    enc_conv_idx: List[int]
-    enc_feat_map: List[Optional[torch.Tensor]]
-    dec_conv_idx: List[int]
-    dec_feat_map: List[Optional[torch.Tensor]]
-
-
-class TAEHV(nn.Module):
     def __init__(
         self,
-        checkpoint_path="taew2_1.pth",
-        decoder_time_upscale=(True, True),
-        decoder_space_upscale=(True, True, True),
-        patch_size=1,
-        latent_channels=16,
-        model_type="wan21",
+        n_f: tuple[int, int, int, int],
+        latent_channels: int,
+        image_channels: int,
+        patch_size: int,
+        decoder_time_upscale: tuple[bool, bool],
+        decoder_space_upscale: tuple[bool, bool, bool],
+        act_func: nn.Module,
     ):
-        """Initialize pretrained TAEHV from the given checkpoint.
-
-        Arg:
-            checkpoint_path: path to weight file to load. taehv.pth for Hunyuan, taew2_1.pth for Wan 2.1.
-            decoder_time_upscale: whether temporal upsampling is enabled for each block. upsampling can be disabled for a cheaper preview.
-            decoder_space_upscale: whether spatial upsampling is enabled for each block. upsampling can be disabled for a cheaper preview.
-            patch_size: input/output pixelshuffle patch-size for this model.
-            latent_channels: number of latent channels (z dim) for this model.
-        """
         super().__init__()
-        self.patch_size = patch_size
-        self.latent_channels = latent_channels
-        self.image_channels = 3
-        self.is_cogvideox = checkpoint_path is not None and "taecvx" in checkpoint_path
-        # if checkpoint_path is not None and "taew2_2" in checkpoint_path:
-        #     self.patch_size, self.latent_channels = 2, 48
-        self.model_type = model_type
-        if model_type == "wan22":
-            self.patch_size, self.latent_channels = 2, 48
-        if model_type == "hy15":
-            act_func = nn.LeakyReLU(0.2, inplace=True)
-        else:
-            act_func = nn.ReLU(inplace=True)
-
-        self.encoder = nn.Sequential(
-            conv(self.image_channels * self.patch_size**2, 64),
-            act_func,
-            TPool(64, 2),
-            conv(64, 64, stride=2, bias=False),
-            MemBlock(64, 64, act_func),
-            MemBlock(64, 64, act_func),
-            MemBlock(64, 64, act_func),
-            TPool(64, 2),
-            conv(64, 64, stride=2, bias=False),
-            MemBlock(64, 64, act_func),
-            MemBlock(64, 64, act_func),
-            MemBlock(64, 64, act_func),
-            TPool(64, 1),
-            conv(64, 64, stride=2, bias=False),
-            MemBlock(64, 64, act_func),
-            MemBlock(64, 64, act_func),
-            MemBlock(64, 64, act_func),
-            conv(64, self.latent_channels),
-        )
-        n_f = [256, 128, 64, 64]
-        self.frames_to_trim = 2 ** sum(decoder_time_upscale) - 1
-        self.decoder = nn.Sequential(
+        # Layer indices match the legacy ``self.decoder = nn.Sequential(...)``
+        # so checkpoint keys (``decoder.<idx>.<param>``) load unchanged.
+        self.blocks = nn.Sequential(
             Clamp(),
-            conv(self.latent_channels, n_f[0]),
+            _conv(latent_channels, n_f[0]),
             act_func,
             MemBlock(n_f[0], n_f[0], act_func),
             MemBlock(n_f[0], n_f[0], act_func),
             MemBlock(n_f[0], n_f[0], act_func),
             nn.Upsample(scale_factor=2 if decoder_space_upscale[0] else 1),
             TGrow(n_f[0], 1),
-            conv(n_f[0], n_f[1], bias=False),
+            _conv(n_f[0], n_f[1], bias=False),
             MemBlock(n_f[1], n_f[1], act_func),
             MemBlock(n_f[1], n_f[1], act_func),
             MemBlock(n_f[1], n_f[1], act_func),
             nn.Upsample(scale_factor=2 if decoder_space_upscale[1] else 1),
             TGrow(n_f[1], 2 if decoder_time_upscale[0] else 1),
-            conv(n_f[1], n_f[2], bias=False),
+            _conv(n_f[1], n_f[2], bias=False),
             MemBlock(n_f[2], n_f[2], act_func),
             MemBlock(n_f[2], n_f[2], act_func),
             MemBlock(n_f[2], n_f[2], act_func),
             nn.Upsample(scale_factor=2 if decoder_space_upscale[2] else 1),
             TGrow(n_f[2], 2 if decoder_time_upscale[1] else 1),
-            conv(n_f[2], n_f[3], bias=False),
+            _conv(n_f[2], n_f[3], bias=False),
             act_func,
-            conv(n_f[3], self.image_channels * self.patch_size**2),
+            _conv(n_f[3], image_channels * patch_size**2),
         )
-        if checkpoint_path is not None:
-            state_dict = load_checkpoint(checkpoint_path)
-            self.load_state_dict(self.patch_tgrow_layers(state_dict))
 
-    def patch_tgrow_layers(self, sd):
-        """Patch TGrow layers to use a smaller kernel if needed.
+    def forward(
+        self, z: torch.Tensor, state: Dict[int, torch.Tensor], batch: int
+    ) -> torch.Tensor:
+        b, t, c, h, w = z.shape
+        x = z.reshape(b * t, c, h, w)
+        for blk in self.blocks:
+            if isinstance(blk, MemBlock):
+                x = blk.cache_step(x, state, batch)
+            else:
+                x = blk(x)
+        bt, c_out, h_out, w_out = x.shape
+        return x.reshape(b, bt // b, c_out, h_out, w_out)
 
-        Args:
-            sd: state dict to patch
-        """
-        new_sd = self.state_dict()
-        for i, layer in enumerate(self.decoder):
-            if isinstance(layer, TGrow):
-                key = f"decoder.{i}.conv.weight"
-                if sd[key].shape[0] > new_sd[key].shape[0]:
-                    # take the last-timestep output channels
-                    sd[key] = sd[key][-new_sd[key].shape[0] :]
-        return sd
 
-    def encode_video(
+def _patch_tgrow_state_dict(
+    sd: Dict[str, torch.Tensor], decoder_blocks: nn.Sequential
+) -> Dict[str, torch.Tensor]:
+    """Truncate over-sized TGrow ``conv.weight`` rows in ``sd`` to the
+    model's expected output channels.
+
+    Some shipped checkpoints store TGrow weights for ``stride=2`` even
+    when the model is configured with ``stride=1``; keep only the
+    last-timestep slice (matches legacy ``patch_tgrow_layers``).
+    """
+    sd = dict(sd)
+    for i, layer in enumerate(decoder_blocks):
+        if isinstance(layer, TGrow):
+            key = f"decoder.blocks.{i}.conv.weight"
+            if key in sd:
+                expected = layer.conv.weight.shape[0]
+                if sd[key].shape[0] > expected:
+                    sd[key] = sd[key][-expected:]
+    return sd
+
+
+class TAEHV(nn.Module):
+    """Tiny AutoEncoder for Hunyuan Video / Wan -- streaming decode-only.
+
+    Loads a TAEHV checkpoint (encoder weights in the file are silently
+    dropped). ``decode`` accepts an ``[N, T, C_z, H, W]`` latent and
+    returns an ``[N, T_out, C_img, H*patch*scale, W*patch*scale]``
+    image tensor in ``[0, 1]``. Each rollout uses a fresh
+    :class:`TAEHVCache`.
+
+    Supported ``model_type`` values: ``"wan21"`` (default; ReLU,
+    ``patch_size=1``, ``latent_channels=16``) and ``"wan22"`` (ReLU,
+    ``patch_size=2``, ``latent_channels=48``). The legacy ``"hy15"``
+    (LeakyReLU + ``[-1, 1]`` clamp) and ``"taecvx"`` (cogvideox even-T
+    skip-trim) variants are NOT supported here -- pass them and the
+    constructor raises.
+
+    Per-rollout dispatch when ``use_cuda_graph=True``:
+        - Rollout 1: bare decoder / wrapper.drain -- drains Inductor
+          autotune on the eager path against the wrapper's static
+          buffer.
+        - Rollout 2+: wrapper.__call__ -- 2 warmups + 1 capture, then
+          pure replays for every same-shape body chunk.
+
+    Example::
+
+        taehv = TAEHV(checkpoint_path="...").to("cuda", torch.bfloat16)
+        cache = taehv.prepare_cache()
+        x = taehv.decode(z, cache=cache)
+
+    Note:
+        Set ``torch.backends.cudnn.benchmark = True`` once at process
+        start for ~5% extra on the eager seed/tail chunks.
+    """
+
+    TEMPORAL_COMPRESSION_RATIO = 4
+    SPATIAL_COMPRESSION_RATIO = 8
+
+    SUPPORTED_MODEL_TYPES = ("wan21", "wan22")
+
+    def __init__(
         self,
-        x,
-        parallel=True,
-        show_progress_bar=False,
-        cache: Optional[TAEHVCache] = None,
+        checkpoint_path: str = "taew2_1.pth",
+        decoder_time_upscale: tuple[bool, bool] = (True, True),
+        decoder_space_upscale: tuple[bool, bool, bool] = (True, True, True),
+        patch_size: int = 1,
+        latent_channels: int = 16,
+        model_type: str = "wan21",
+        use_cuda_graph: bool = True,
+        use_compile: bool = False,
+        warmup_iters: int = 2,
     ):
-        """Encode a sequence of frames.
+        super().__init__()
+        if model_type not in self.SUPPORTED_MODEL_TYPES:
+            raise ValueError(
+                f"TAEHV: model_type={model_type!r} is not supported by this slim "
+                f"impl (supported: {self.SUPPORTED_MODEL_TYPES}). The legacy "
+                f"'hy15' / 'taecvx' branches (different activation, clamp range, "
+                f"or trim semantics) were dropped in the decode-only refactor."
+            )
+        if checkpoint_path is not None and "taecvx" in checkpoint_path:
+            # CogVideoX checkpoints relied on a legacy ``skip_trim`` branch
+            # (``is_cogvideox and x.shape[1] % 2 == 0``) that is not ported.
+            raise ValueError(
+                f"TAEHV: cogvideox checkpoint {checkpoint_path!r} is not "
+                f"supported by this slim impl."
+            )
+        # ``wan22`` uses a different patch-size / latent-channel config; the
+        # other supported model types share the defaults above.
+        if model_type == "wan22":
+            patch_size, latent_channels = 2, 48
+        act_func = nn.ReLU(inplace=True)
 
-        Args:
-            x: input NTCHW RGB (C=3) tensor with values in [0, 1].
-            parallel: if True, all frames will be processed at once.
-              (this is faster but may require more memory).
-              if False, frames will be processed sequentially.
-        Returns NTCHW latent tensor with ~Gaussian values.
-        """
-        if self.patch_size > 1:
-            x = F.pixel_unshuffle(x, self.patch_size)
-        if x.shape[1] % 4 != 0:
-            # pad at end to multiple of 4
-            n_pad = 4 - x.shape[1] % 4
-            padding = x[:, -1:].repeat_interleave(n_pad, dim=1)
-            x = torch.cat([x, padding], 1)
-        return apply_model_with_memblocks(
-            self.encoder,
-            x,
-            parallel,
-            show_progress_bar,
-            cache_mem=cache.enc_feat_map if cache is not None else None,
+        self.patch_size = patch_size
+        self.latent_channels = latent_channels
+        self.image_channels = 3
+        self.model_type = model_type
+        # Frames the decoder must drop from the front of its FIRST chunk
+        # output. ``2 ** sum(time_upscale) - 1`` matches legacy.
+        self.frames_to_trim = 2 ** sum(decoder_time_upscale) - 1
+
+        n_f = (256, 128, 64, 64)
+        # Build on `meta` -- only the checkpoint allocates real memory.
+        with torch.device("meta"):
+            self.decoder = Decoder(
+                n_f=n_f,
+                latent_channels=latent_channels,
+                image_channels=self.image_channels,
+                patch_size=patch_size,
+                decoder_time_upscale=decoder_time_upscale,
+                decoder_space_upscale=decoder_space_upscale,
+                act_func=act_func,
+            )
+
+        sd = load_checkpoint(checkpoint_path)
+        # Re-key from legacy ``decoder.<i>.*`` to ``decoder.blocks.<i>.*``
+        # (the new ``Decoder`` wraps the Sequential in an attribute).
+        sd = {
+            (
+                k.replace("decoder.", "decoder.blocks.", 1)
+                if k.startswith("decoder.") and not k.startswith("decoder.blocks.")
+                else k
+            ): v
+            for k, v in sd.items()
+        }
+        sd = _patch_tgrow_state_dict(sd, self.decoder.blocks)
+        # ``assign=True``: meta params become the checkpoint tensors as-is;
+        # ``strict=False``: silently drop encoder-only weights.
+        self.load_state_dict(sd, strict=False, assign=True)
+
+        self.eval().requires_grad_(False)
+
+        self._use_cuda_graph = use_cuda_graph
+
+        if use_compile:
+            self.decoder = torch.compile(  # type: ignore[assignment]
+                self.decoder, mode="max-autotune-no-cudagraphs"
+            )
+        self._decoder_call: Callable[..., torch.Tensor] = (
+            CUDAGraphWrapper(self.decoder, warmup_iters=warmup_iters)
+            if use_cuda_graph
+            else self.decoder
         )
-
-    def decode_video(
-        self,
-        x,
-        parallel=True,
-        show_progress_bar=False,
-        cache: Optional[TAEHVCache] = None,
-    ):
-        """Decode a sequence of frames.
-
-        Args:
-            x: input NTCHW latent (C=12) tensor with ~Gaussian values.
-            parallel: if True, all frames will be processed at once.
-              (this is faster but may require more memory).
-              if False, frames will be processed sequentially.
-        Returns NTCHW RGB tensor with ~[0, 1] values.
-        """
-        # NOTE(qi): We only trim the first decoded chunk. Index 3 corresponds to the first MemBlock in the decoder.
-        #           We can also use other ways to determine if it's the first decode.
-        first_decode = True if cache is None else (cache.dec_feat_map[3] is None)
-        # Combine with the original logic to determine if we should skip trimming.
-        skip_trim = (self.is_cogvideox and x.shape[1] % 2 == 0) or (not first_decode)
-        x = apply_model_with_memblocks(
-            self.decoder,
-            x,
-            parallel,
-            show_progress_bar,
-            cache_mem=cache.dec_feat_map if cache is not None else None,
-        )
-        if self.model_type == "hy15":
-            x = x.clamp_(-1, 1)
-        else:
-            x = x.clamp_(0, 1)
-        if self.patch_size > 1:
-            x = F.pixel_shuffle(x, self.patch_size)
-        if skip_trim:
-            # skip trimming for cogvideox to make frame counts match.
-            # this still doesn't have correct temporal alignment for certain frame counts
-            # (cogvideox seems to pad at the start?), but for multiple-of-4 it's fine.
-            return x
-        return x[:, self.frames_to_trim :]
 
     def prepare_cache(self) -> TAEHVCache:
-        return TAEHVCache(
-            enc_conv_idx=[],
-            enc_feat_map=[None] * len(self.encoder),
-            dec_conv_idx=[],
-            dec_feat_map=[None] * len(self.decoder),
-        )
+        """Return a fresh empty cache and drop any captured CUDA graph.
+
+        Captured kernels reference the previous cache's slot pointers,
+        which a new cache invalidates -- warmup + capture re-run on the
+        next decode of each shape.
+        """
+        if self._use_cuda_graph:
+            self._decoder_call.reset()  # type: ignore[union-attr]
+        return TAEHVCache()
+
+    @torch.inference_mode()
+    def decode(
+        self, z: torch.Tensor, cache: Optional[TAEHVCache] = None
+    ) -> torch.Tensor:
+        """Streaming decode of ``z`` (``[N, T, C_z, H, W]`` latent).
+
+        First call (``cache.dec_state`` empty): runs the decoder eagerly
+        and trims the leading ``frames_to_trim`` frames; subsequent
+        same-shape calls go through the captured graph.
+        """
+        if cache is None:
+            cache = self.prepare_cache()
+        state = cache.dec_state
+        first_decode = not state
+        # Bind decoder before the first call so steady-state calls go through
+        # the wrapper while the autotune-during-capture shape is the eager
+        # path.
+        if self._use_cuda_graph:
+            decoder = (
+                self._decoder_call.drain  # type: ignore[union-attr]
+                if first_decode
+                else self._decoder_call
+            )
+        else:
+            decoder = self.decoder
+
+        b = z.shape[0]
+        x = decoder(z, state, b)
+        # Clamp / pixel-shuffle / trim happen outside the captured region;
+        # the wrapper returns ``static_output.clone()`` so ``clamp_`` is
+        # safe in-place.
+        x = x.clamp_(0, 1)
+        if self.patch_size > 1:
+            n, t, c, h, w = x.shape
+            x = F.pixel_shuffle(x.reshape(n * t, c, h, w), self.patch_size)
+            x = x.reshape(n, t, x.shape[1], x.shape[2], x.shape[3])
+        if first_decode:
+            x = x[:, self.frames_to_trim :]
+        return x
