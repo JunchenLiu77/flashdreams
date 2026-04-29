@@ -29,6 +29,11 @@ from typing import TypeAlias
 import torch
 from torch import Tensor
 
+from flashdreams.core.distributed.context_parallel import (
+    cat_outputs_cp,
+    split_inputs_cp,
+    split_inputs_cp_object_list,
+)
 from flashdreams.infra.decoder import DecoderAutoregressiveCache
 from flashdreams.infra.encoder import EncoderAutoregressiveCache
 from flashdreams.infra.encoder.text.cosmos_qwen import (
@@ -127,6 +132,12 @@ class AlpadreamsPipeline(
         )
         self._decoder_temporal_compression: int = decoder.TEMPORAL_COMPRESSION_RATIO
 
+        # Take the view split outside of the transformer, so that VAE does not do duplicated job.
+        self.V_group = transformer.cp_groups.V_group
+        self.V_size = transformer.cp_groups.V_size
+        transformer.cp_groups.V_group = None
+        transformer.config.num_views //= self.V_size
+
     @property
     def device(self) -> torch.device:
         return self.diffusion_model.device
@@ -162,6 +173,15 @@ class AlpadreamsPipeline(
         )  # [B, V, L, D]
         image_embeddings = self.image_encoder(image)  # [B, V, 1, Cl, Hl, Wl]
 
+        # distribute multi-view
+        text_embeddings = split_inputs_cp(
+            text_embeddings, seq_dim=1, cp_group=self.V_group
+        )
+        image_embeddings = split_inputs_cp(
+            image_embeddings, seq_dim=1, cp_group=self.V_group
+        )
+        view_names = split_inputs_cp_object_list(view_names, cp_group=self.V_group)
+
         return super().initialize_cache(
             transformer_context={
                 "text_embeddings": text_embeddings,
@@ -190,11 +210,19 @@ class AlpadreamsPipeline(
             Decoded video chunk of shape ``[B, V, T, 3, H, W]`` in
             ``[-1, 1]``.
         """
-        return super().generate(
+        # distribute multi-view
+        hdmap = split_inputs_cp(hdmap, seq_dim=1, cp_group=self.V_group)
+
+        # generate
+        output = super().generate(
             autoregressive_index=autoregressive_index,
             cache=cache,
             input=hdmap,
         )
+
+        # gather multi-view
+        output = cat_outputs_cp(output, seq_dim=1, cp_group=self.V_group)
+        return output
 
     def get_num_frames(self, autoregressive_index: int) -> int:
         """Number of decoded video frames produced by AR step ``autoregressive_index``.

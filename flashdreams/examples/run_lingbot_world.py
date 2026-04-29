@@ -221,17 +221,16 @@ def main() -> None:
             poses=camera_poses_t[:, :, start:end],
             world_scale=float(trans_normalizer),
         )
-        generated_video.append(
-            pipeline.generate(
-                autoregressive_index=i,
-                cache=cache,
-                input=camctrl_input,
-            ).cpu()
+        video_chunk = pipeline.generate(
+            autoregressive_index=i,
+            cache=cache,
+            input=camctrl_input,
         )
-        start = end
         stats = pipeline.finalize(i, cache)
         if stats is not None:
             stats_history.append({"autoregressive_index": i, **stats})
+        generated_video.append(video_chunk.cpu())
+        start = end
 
     video = torch.cat(generated_video, dim=2)  # [B, V, T, C, H, W]
     print("end of streaming inference, generated_video.shape:", video.shape)
@@ -256,7 +255,20 @@ def main() -> None:
                 json.dump(stats_history, f, indent=2)
             print(f"saved per-AR-step stats to {stats_path}")
 
+    # Drop captured CUDA graphs / private mempools BEFORE NCCL teardown so
+    # they don't hold workspace buffers across the destroy. Otherwise the
+    # private mempool can outlive the communicator and rank-0's destroy
+    # can hang waiting for already-exited peers.
+    del cache
+    del pipeline
+    torch.cuda.synchronize()
+    torch.cuda.empty_cache()
+    # Hold every rank here until rank 0 finishes its mp4 encode. Without
+    # this barrier rank>0 races to destroy_process_group() and exits while
+    # rank 0 is still encoding; rank 0's later destroy then deadlocks
+    # trying to talk to peers that no longer exist.
     if torch.distributed.is_initialized():
+        torch.distributed.barrier()
         torch.distributed.destroy_process_group()
 
 

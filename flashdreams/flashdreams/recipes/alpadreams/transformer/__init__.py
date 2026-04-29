@@ -34,6 +34,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from flashdreams.core.checkpoint.load import load_checkpoint
+from flashdreams.infra.cuda_graph import CUDAGraphWrapper
 from flashdreams.infra.diffusion.transformer import (
     Transformer,
     TransformerAutoregressiveCache,
@@ -109,12 +110,18 @@ class CosmosTransformerCache(TransformerAutoregressiveCache):
     autoregressive_index: int = -1
 
     def start(self, autoregressive_index: int) -> None:
+        # Hoist the per-block KV pre-update hook out of the network
+        # forward (predict_flow runs the network with eager_mode=False)
+        # so capture-time / replay-time of the network never executes
+        # cache pointer-swap bookkeeping.
         self.autoregressive_index = autoregressive_index
+        self.network_cache.before_update(autoregressive_index)
 
     def finalize(self, autoregressive_index: int) -> None:
-        # Per-block KV update is fused inside the network forward
-        # (eager_mode=True), so finalize is a no-op here.
-        return
+        # Counterpart of start(): per-block KV post-update hook now
+        # lives at the AR-step boundary instead of inside the captured
+        # network forward.
+        self.network_cache.after_update(autoregressive_index)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +187,18 @@ class CosmosTransformerConfig(TransformerConfig):
 
     # Speedup.
     compile_network: bool = True
+    use_cuda_graph: bool = True
+    """Wrap the (optionally compiled) network in :class:`CUDAGraphWrapper`
+    so steady-state ``predict_flow`` calls replay a captured graph
+    instead of re-launching kernels every denoising step. Caller is
+    responsible for keeping all non-staged inputs (timestep, rope_freqs,
+    masks, hdmap_condition, view_indices) at stable storage addresses
+    across calls -- the wrapper only stages the noisy latent."""
+    warmup_iters: int = 2
+    """Number of eager calls per rollout before the wrapper captures
+    (only consulted when :attr:`use_cuda_graph` is True). Two is the
+    minimum that drains Inductor autotune (call 1) AND gives a clean
+    no-sync stream (call 2) before ``cudaStreamBeginCapture``."""
 
     def __post_init__(self) -> None:
         # Wire HDMap conditioning channel-count.
@@ -203,6 +222,24 @@ class CosmosTransformerConfig(TransformerConfig):
         self._pT = self.len_t // kt
         self._pH = self.height // kh
         self._pW = self.width // kw
+
+        # First AR step at which the per-block KV cache's `cached_k()`
+        # reaches its steady (= window-full) shape. Before this step,
+        # the attention sequence length grows by `_pT` tokens per AR
+        # step (filling phase); from this step onwards every call sees
+        # the same `(sink_size + window_size)` tokens, so the network
+        # forward is shape-stable and safe for CUDA-graph capture.
+        # Counted in chunks (one chunk per AR step):
+        #   chunks_per_window = (sink_size_t + window_size_t) // _pT
+        # The last filling step (chunks_per_window - 1) ALREADY makes
+        # cached_k() return the full prefix, so it counts as steady.
+        chunks_total = self.sink_size_t + self.window_size_t
+        assert chunks_total % self._pT == 0, (
+            f"sink_size_t + window_size_t ({chunks_total}) must be "
+            f"divisible by _pT ({self._pT}) so the BlockKVCache can fit "
+            f"a whole number of AR chunks."
+        )
+        self._steady_ar_idx = chunks_total // self._pT - 1
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +314,22 @@ class CosmosTransformer(Transformer[CosmosTransformerCache]):
             self.network = torch.compile(  # type: ignore[assignment]
                 self.network, mode="max-autotune-no-cudagraphs"
             )
+
+        # Per-rollout dispatch (when use_cuda_graph=True):
+        # - AR step < cfg._steady_ar_idx (filling phase: cached_k()
+        #   length grows each step): wrapper.drain -- eager through
+        #   the wrapper's static input buffer. Each new shape drains
+        #   its own Inductor autotune so the same shape, when revisited
+        #   in a later rollout, no longer syncs during capture.
+        # - AR step >= cfg._steady_ar_idx (KV window first full and
+        #   stays full): wrapper.__call__ -- 2 warmups + 1 capture,
+        #   then pure replays for every same-shape predict_flow call.
+        self._use_cuda_graph = config.use_cuda_graph
+        self._network_call: Callable[..., Tensor] = (
+            CUDAGraphWrapper(self.network, warmup_iters=config.warmup_iters)
+            if config.use_cuda_graph
+            else self.network
+        )
 
     # ------------------------------------------------------------------
     # Patchify / CP plumbing
@@ -388,7 +441,7 @@ class CosmosTransformer(Transformer[CosmosTransformerCache]):
         )
 
         view_indices: Tensor | None = None
-        if cfg.num_views > 1:
+        if cfg.network.enable_cross_view_attn:
             assert view_names is not None and len(view_names) == cfg.num_views, (
                 f"view_names of length {cfg.num_views} required when "
                 f"num_views > 1 (got {view_names})"
@@ -427,6 +480,13 @@ class CosmosTransformer(Transformer[CosmosTransformerCache]):
         mask_other_patched = self.network.patchify_and_maybe_split_cp(
             mask_other_blocks, process_groups=self._process_groups, cp_dims=[1, 2, 3]
         )
+
+        # Drop any captured CUDA graph from the previous rollout: its
+        # kernels reference the old network_cache's slot pointers,
+        # which the freshly-initialised network_cache invalidates.
+        # Warmup + capture re-run on the next steady-state predict_flow.
+        if self._use_cuda_graph:
+            self._network_call.reset()  # type: ignore[union-attr]
 
         return CosmosTransformerCache(
             network_cache=network_cache,
@@ -483,8 +543,27 @@ class CosmosTransformer(Transformer[CosmosTransformerCache]):
         noisy_latent = self._maybe_inject_image(noisy_latent, cache)
         condition_video_input_mask = self._select_mask(cache)
 
-        return self.network(
-            x=noisy_latent,
+        # eager_mode=False: per-block KV before_update / after_update
+        # hooks are invoked at the AR-step boundary by
+        # CosmosTransformerCache.start() / .finalize(), not inside the
+        # network forward. This keeps the network forward graph-capture
+        # clean (no cache pointer-swap bookkeeping inside).
+        #
+        # AR step < _steady_ar_idx -> wrapper.drain (filling phase;
+        # cached_k() shape changes every step). AR step >=
+        # _steady_ar_idx -> wrapper.__call__ (window full, shape
+        # stable; warmup -> capture -> replay). See `__init__` for the
+        # per-rollout dispatch contract.
+        if self._use_cuda_graph:
+            network = (
+                self._network_call.drain  # type: ignore[union-attr]
+                if ar_idx < self.config._steady_ar_idx
+                else self._network_call
+            )
+        else:
+            network = self.network
+        return network(
+            noisy_latent,
             timesteps=timestep,
             rope_freqs=rope_freqs,
             cache=cache.network_cache,
@@ -492,7 +571,7 @@ class CosmosTransformer(Transformer[CosmosTransformerCache]):
             current_chunk_idx=ar_idx,
             hdmap_condition=input,
             view_indices=cache.view_indices,
-            eager_mode=True,
+            eager_mode=False,
         )
 
     def postprocess_clean_latent(

@@ -20,6 +20,7 @@ RUN apt-get update -qq \
         iputils-ping \
         curl \
         git \
+        openssh-client \
         ca-certificates \
         tmux \
         screen \

@@ -154,12 +154,14 @@ def main() -> None:
 
         cache = pipeline.initialize_cache(text=[prompt])
 
-    generated_video = pipeline.generate(autoregressive_index=0, cache=cache).cpu()
-    print("Generated video shape:", generated_video.shape)
-
+    generated_video = pipeline.generate(autoregressive_index=0, cache=cache)
     # Single-AR-step rollouts don't need finalize; run it for API
-    # symmetry (and to log this step's per-stage profiling).
+    # symmetry (and to log this step's per-stage profiling). Call it
+    # before .cpu() so the host sync from the device->host copy isn't
+    # attributed to the "finalize" stage in the per-AR-step timing.
     stats = pipeline.finalize(autoregressive_index=0, cache=cache)
+    generated_video = generated_video.cpu()
+    print("Generated video shape:", generated_video.shape)
 
     # Save the generated video
     canvas = rearrange(generated_video, "t c h w -> t h w c")

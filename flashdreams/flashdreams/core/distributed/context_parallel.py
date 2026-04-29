@@ -10,7 +10,9 @@ from torch.distributed import (
 )
 
 
-def split_inputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
+def split_inputs_cp(
+    x: Tensor, seq_dim: int, cp_group: ProcessGroup | None = None
+) -> Tensor:
     """
     Split input tensor along the sequence dimension for context parallelism.
 
@@ -29,6 +31,9 @@ def split_inputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
     Raises:
         AssertionError: If the sequence dimension is not divisible by the number of ranks.
     """
+    if cp_group is None:
+        return x
+
     cp_size = cp_group.size()
     if seq_dim < 0:
         seq_dim = x.ndim + seq_dim  # bring it to positive dimension
@@ -49,7 +54,9 @@ def split_inputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
     return x.contiguous()
 
 
-def cat_outputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
+def cat_outputs_cp(
+    x: Tensor, seq_dim: int, cp_group: ProcessGroup | None = None
+) -> Tensor:
     """
     Concatenate outputs from different ranks in the checkpoint parallelism group.
 
@@ -67,6 +74,9 @@ def cat_outputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
     Raises:
         RuntimeError: If the gather operation fails.
     """
+    if cp_group is None:
+        return x
+
     x = x.contiguous()
 
     # Get the world size (number of processes in the group)
@@ -89,7 +99,7 @@ T = TypeVar("T")
 
 
 def split_inputs_cp_object_list(
-    object_list: list[T], cp_group: ProcessGroup
+    object_list: list[T], cp_group: ProcessGroup | None = None
 ) -> list[T]:
     """
     Split input object list for context parallelism.
@@ -107,6 +117,9 @@ def split_inputs_cp_object_list(
     Raises:
         AssertionError: If the sequence dimension is not divisible by the number of ranks.
     """
+    if cp_group is None:
+        return object_list
+
     cp_size = cp_group.size()
     n_objects = len(object_list)
     assert n_objects % cp_size == 0, f"{n_objects} cannot divide cp_size {cp_size}"
@@ -118,7 +131,9 @@ def split_inputs_cp_object_list(
     return object_list[start_idx:end_idx]
 
 
-def cat_outputs_cp_object_list(object_list: list[T], cp_group: ProcessGroup) -> list[T]:
+def cat_outputs_cp_object_list(
+    object_list: list[T], cp_group: ProcessGroup | None = None
+) -> list[T]:
     """
     Concatenate outputs from different ranks in the context parallelism group.
 
@@ -132,6 +147,9 @@ def cat_outputs_cp_object_list(object_list: list[T], cp_group: ProcessGroup) -> 
     Returns:
         A list of objects that is the concatenation of objects from all ranks in the cp_group.
     """
+    if cp_group is None:
+        return object_list
+
     # Get the world size (number of processes in the group)
     world_size = get_world_size(cp_group)
 

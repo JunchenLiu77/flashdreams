@@ -29,23 +29,23 @@ class HierarchicalCPGroups:
 
     @property
     def HW_size(self) -> int:
-        return len(self.HW_ranks) or 1
+        return 1 if self.HW_group is None else self.HW_group.size()
 
     @property
     def T_size(self) -> int:
-        return len(self.T_ranks) or 1
+        return 1 if self.T_group is None else self.T_group.size()
 
     @property
     def THW_size(self) -> int:
-        return len(self.THW_ranks) or 1
+        return 1 if self.THW_group is None else self.THW_group.size()
 
     @property
     def V_size(self) -> int:
-        return len(self.V_ranks) or 1
+        return 1 if self.V_group is None else self.V_group.size()
 
     @property
     def VHW_size(self) -> int:
-        return len(self.VHW_ranks) or 1
+        return 1 if self.VHW_group is None else self.VHW_group.size()
 
 
 def create_hierarchical_cp_groups(
