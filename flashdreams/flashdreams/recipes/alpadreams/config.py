@@ -55,7 +55,7 @@ AVAILABLE_ALPADREAMS_CHECKPOINT_PATHS: dict[str, dict[str, str | dict[str, str]]
 # ---------------------------------------------------------------------------
 
 _DEFAULT_BATCH_SHAPE: tuple[int, ...] = (1,)
-_DEFAULT_VIDEO_HEIGHT = 720
+_DEFAULT_VIDEO_HEIGHT = 704
 _DEFAULT_VIDEO_WIDTH = 1280
 _WAN_VAE_SPATIAL_COMPRESSION = 8
 _DEFAULT_DENOISING_TIMESTEPS = [1000, 450]
