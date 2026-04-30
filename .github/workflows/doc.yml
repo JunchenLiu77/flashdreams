@@ -49,7 +49,7 @@ jobs:
       # under `versions/<version>/` on releases (mirrors gsplat's layout).
       - name: Get version + subdirectory
         run: |
-          VERSION=$(python -c "import tomllib; print(tomllib.loads(open('flashdreams/pyproject.toml','rb').read())['project']['version'])")
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('flashdreams/pyproject.toml','rb'))['project']['version'])")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "DOCS_SUBDIR=versions/$VERSION" >> $GITHUB_ENV
 
