@@ -54,6 +54,15 @@ Run::
         --n_cameras 1 \\
         --total_blocks 60 \\
         --embeddings_path outputs/alpadreams_sv_embeddings.pt
+
+    # Same idea but in-process: compute embeddings, free the encoders,
+    # then load the AR pipeline. No on-disk artifact, lower peak VRAM
+    # than the default path:
+    torchrun --nproc_per_node=N \\
+        examples/run_alpadreams.py \\
+        --n_cameras 1 \\
+        --total_blocks 60 \\
+        --online_precompute_embeddings
 """
 
 from __future__ import annotations
@@ -155,12 +164,28 @@ def parse_args() -> argparse.Namespace:
             "hydrated from the precomputed tensors instead."
         ),
     )
+    parser.add_argument(
+        "--online_precompute_embeddings",
+        action="store_true",
+        help=(
+            "Compute text + first-frame embeddings in-process, then "
+            "free the encoders BEFORE building the AR pipeline. Lowers "
+            "peak VRAM compared to the default path (which holds the "
+            "encoders and the DiT in memory simultaneously) without "
+            "requiring a separate precompute step / saved file. "
+            "Mutually exclusive with --embeddings_path."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     assert args.n_cameras in (1, 4), "Only 1 or 4 cameras are supported"
+    assert not (args.embeddings_path and args.online_precompute_embeddings), (
+        "--embeddings_path and --online_precompute_embeddings are mutually "
+        "exclusive: pick one (or neither for the default path)."
+    )
 
     config_meta, data = _build_data(args.n_cameras)
     config_name = (
@@ -215,6 +240,62 @@ def main() -> None:
         compile_network=not args.no_compile,
         seed=42 + rank,
     )
+
+    # Online-precompute path: stand up ONLY the one-shot encoders here,
+    # compute the embeddings, free the encoders, then null the configs
+    # so pipeline.setup() below skips them entirely. Peak VRAM is now
+    # max(encoders, AR pipeline) instead of their sum.
+    precomputed_embeddings: dict[str, torch.Tensor] | None = None
+    if args.online_precompute_embeddings:
+        assert (
+            pipeline_config.text_encoder is not None
+            and pipeline_config.image_encoder is not None
+        ), "Cannot precompute: encoder configs are already None on this builder."
+
+        # Read the input pixel resolution off the configs without
+        # instantiating the transformer or decoder.
+        pre_transformer_cfg = pipeline_config.diffusion_model.transformer
+        pre_decoder_sp = pipeline_config.decoder._target.SPATIAL_COMPRESSION_RATIO  # type: ignore[union-attr]
+        pre_pixel_h = pre_transformer_cfg.height * pre_decoder_sp
+        pre_pixel_w = pre_transformer_cfg.width * pre_decoder_sp
+
+        pre_first_frames: list[torch.Tensor] = []
+        pre_prompts: list[str] = []
+        for entry in data:
+            ff = media.read_image(entry["first_frame_path"])
+            ff = cv2.resize(ff, (pre_pixel_w, pre_pixel_h))
+            ff_t = torch.from_numpy(ff).to(dtype=dtype, device=device) / 127.5 - 1.0
+            pre_first_frames.append(rearrange(ff_t, "h w c -> 1 c h w"))
+            pre_prompts.append(entry["prompt"])
+        pre_first_frames_t = torch.stack(pre_first_frames, dim=0).unsqueeze(0)
+        pre_prompts_2d = [pre_prompts]
+
+        if rank == 0:
+            print("[online precompute] loading encoders and computing embeddings")
+        text_encoder = pipeline_config.text_encoder.setup().to(device=device)
+        image_encoder = pipeline_config.image_encoder.setup().to(device=device)
+        with torch.no_grad():
+            text_embeddings = torch.stack(
+                [text_encoder(t) for t in pre_prompts_2d], dim=0
+            ).cpu()
+            image_embeddings = image_encoder(pre_first_frames_t).cpu()
+        precomputed_embeddings = {
+            "text_embeddings": text_embeddings,
+            "image_embeddings": image_embeddings,
+        }
+
+        del text_encoder, image_encoder, pre_first_frames, pre_first_frames_t
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        if rank == 0:
+            print(
+                f"[online precompute] done; freed encoders. "
+                f"text {tuple(text_embeddings.shape)} {text_embeddings.dtype}, "
+                f"image {tuple(image_embeddings.shape)} {image_embeddings.dtype}"
+            )
+        pipeline_config.text_encoder = None
+        pipeline_config.image_encoder = None
+
     if args.embeddings_path is not None:
         # Skip the one-shot encoder load entirely; embeddings are
         # hydrated below from the precomputed file.
@@ -234,7 +315,12 @@ def main() -> None:
     first_frames: list[torch.Tensor] = []
     hdmap_videos: list[torch.Tensor] = []
     prompts: list[str] = []
-    needs_first_frames = args.embeddings_path is None
+    # First frames are only needed when the image encoder will run
+    # below; in both precomputed paths it has already been consumed
+    # (online: above; from-disk: never, since embeddings are loaded).
+    needs_first_frames = (
+        args.embeddings_path is None and not args.online_precompute_embeddings
+    )
     for entry in data:
         if needs_first_frames:
             first_frame = media.read_image(entry["first_frame_path"])
@@ -279,6 +365,12 @@ def main() -> None:
             text_embeddings=payload["text_embeddings"],
             image_embeddings=payload["image_embeddings"],
             view_names=saved_view_names,
+        )
+    elif precomputed_embeddings is not None:
+        cache = pipeline.initialize_cache_from_embeddings(
+            text_embeddings=precomputed_embeddings["text_embeddings"],
+            image_embeddings=precomputed_embeddings["image_embeddings"],
+            view_names=camera_names,
         )
     else:
         first_frames_t = torch.stack(first_frames, dim=0).unsqueeze(
