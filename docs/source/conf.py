@@ -38,10 +38,7 @@ extensions = [
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "sphinx": ("https://www.sphinx-doc.org/en/master/", None),
-    # NOTE: PyTorch's `objects.inv` is currently 404 on both
-    # `pytorch.org/docs/stable/` and `docs.pytorch.org/docs/stable/`,
-    # so torch cross-references are disabled. Re-add when upstream
-    # restores it.
+    "torch": ("https://pytorch.org/docs/main/", None),
 }
 intersphinx_disabled_domains = ["std"]
 

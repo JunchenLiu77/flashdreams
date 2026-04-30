@@ -53,10 +53,11 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "DOCS_SUBDIR=versions/$VERSION" >> $GITHUB_ENV
 
-      # On pushes to main, render the version banner as `main` and deploy
-      # under `main/` instead of `versions/<x.y.z>/`.
-      - name: Override version + subdirectory for pushes to main
-        if: github.event_name == 'push'
+      # On pushes to main *or* manual workflow_dispatch runs, render the
+      # version banner as `main` and deploy under `main/` instead of
+      # `versions/<x.y.z>/`. Releases keep the version-pinned subdir.
+      - name: Override version + subdirectory for main / manual builds
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           sed -i 's/^version = ".*"/version = "main"/' flashdreams/pyproject.toml
           echo "DOCS_SUBDIR=main" >> $GITHUB_ENV
@@ -76,27 +77,76 @@ jobs:
           # Uncomment + set if you wire up a custom domain later:
           # cname: docs.flashdreams.nvidia.com
 
-      # Maintain a flat index of all released versions on the gh-pages branch
-      # at `versions/index.txt`. Useful for dynamically generating a version
-      # picker on the docs site (mirrors gsplat).
-      - name: Update versions/index.txt
-        if: github.event_name == 'release'
+      # Maintain root-level files on the gh-pages branch in a single clone:
+      # - `.nojekyll`        — disables Jekyll so Sphinx's _static/ assets are
+      #                        served verbatim (Jekyll skips files/dirs that
+      #                        start with `_`).
+      # - `index.html`       — redirects the bare site URL to /main/ so visitors
+      #                        landing on `https://<owner>.github.io/<repo>/`
+      #                        see the latest docs instead of a 404.
+      # - `versions/index.txt` (release-only) — flat list of released versions
+      #                        for a future version-picker widget (mirrors gsplat).
+      # Idempotent: only commits whatever pieces were actually missing/new.
+      - name: Maintain gh-pages root (index.html, .nojekyll, versions/index.txt)
+        if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ env.VERSION }}
         run: |
-          git fetch
-          git checkout .  # revert the version-banner sed from earlier (no-op on releases)
-          git checkout gh-pages
-          git pull
-          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
-          git config --global user.name "${{ github.actor }}"
-          FILE="versions/index.txt"
-          mkdir -p versions
-          touch "$FILE"
-          if ! grep -qx "$VERSION" "$FILE"; then
-            echo "$VERSION" >> "$FILE"
-            git add "$FILE"
-            git commit -m "Update versions/index.txt with new version $VERSION"
+          set -e
+
+          # Shallow-clone gh-pages so we touch the branch only once per run.
+          tmp=$(mktemp -d)
+          git clone --depth=1 --branch=gh-pages \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$tmp"
+          cd "$tmp"
+
+          changed=0
+
+          # Disable Jekyll so Sphinx's _static/ assets are served verbatim.
+          if [ ! -f .nojekyll ]; then
+            touch .nojekyll
+            changed=1
+          fi
+
+          # Root redirect → /main/ so the bare site URL lands on latest docs.
+          if [ ! -f index.html ]; then
+            cat > index.html <<'HTML'
+          <!doctype html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>flashdreams docs</title>
+              <meta http-equiv="refresh" content="0; url=./main/">
+              <link rel="canonical" href="./main/">
+            </head>
+            <body>
+              Redirecting to <a href="./main/">./main/</a>.
+            </body>
+          </html>
+          HTML
+            changed=1
+          fi
+
+          # Releases also append the new version to a flat index file
+          # for a future version-picker widget.
+          if [ "${{ github.event_name }}" = "release" ]; then
+            mkdir -p versions
+            touch versions/index.txt
+            if ! grep -qx "$VERSION" versions/index.txt; then
+              echo "$VERSION" >> versions/index.txt
+              changed=1
+            fi
+          fi
+
+          # Single push (or none) covering whichever pieces we actually added.
+          if [ "$changed" -eq 1 ]; then
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name  "github-actions[bot]"
+            # `versions/index.txt` only exists on release runs; tolerate its absence.
+            git add .nojekyll index.html versions/index.txt 2>/dev/null || git add .nojekyll index.html
+            git commit -m "Maintain gh-pages root (index.html, .nojekyll, versions/index.txt)"
             git push origin gh-pages
+          else
+            echo "gh-pages root already up to date; nothing to commit."
           fi
