@@ -23,6 +23,10 @@ version = release if release[:1].isalpha() else f"v{release}"
 
 # -- General configuration ---------------------------------------------------
 
+# Treat warnings as errors so broken references / malformed docstrings are
+# caught early (locally and in CI).
+warningiserror = True
+
 extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.duration",
