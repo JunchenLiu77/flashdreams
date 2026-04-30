@@ -55,6 +55,7 @@ export FLASHDREAMS_CACHE_DIR=~/.cache/flashdreams # default
 
 # 4. Run inference script. Checkpoints and example data are auto-downloaded at first run.
 # - single view on single GPU
+# - add (--overwrite_config_name sv_2steps_chunk2_loc6_lightvae_lighttae_perf) for best perf.
 uv run --package flashdreams --extra examples \
   python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=1 \
     flashdreams/examples/run_alpadreams.py \

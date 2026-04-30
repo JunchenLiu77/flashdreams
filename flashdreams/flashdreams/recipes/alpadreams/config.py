@@ -76,15 +76,23 @@ _DEFAULT_DENOISING_TIMESTEPS = [1000, 450]
 _DEFAULT_NUM_TRAIN_TIMESTEPS = 1000
 
 
-def _wan_vae_decoder_config() -> WanVAEDecoderConfig:
+def _wan_vae_decoder_config(
+    *, use_compile: bool = False, use_cuda_graph: bool = True
+) -> WanVAEDecoderConfig:
     return WanVAEDecoderConfig(
         checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS["vae"],
+        use_compile=use_compile,
+        use_cuda_graph=use_cuda_graph,
     )
 
 
-def _teahv_vae_decoder_config() -> TeahvVAEDecoderConfig:
+def _teahv_vae_decoder_config(
+    *, use_compile: bool = False, use_cuda_graph: bool = True
+) -> TeahvVAEDecoderConfig:
     return TeahvVAEDecoderConfig(
         checkpoint_path=AVAILABLE_TAEHV_CHECKPOINT_PATHS["lighttae"],
+        use_compile=use_compile,
+        use_cuda_graph=use_cuda_graph,
     )
 
 
@@ -130,9 +138,16 @@ def _transformer_config(
     )
 
 
-def _wan_vae_encoder(*, checkpoint_name: str = "vae") -> WanVAEEncoderConfig:
+def _wan_vae_encoder(
+    *,
+    checkpoint_name: str = "vae",
+    use_compile: bool = False,
+    use_cuda_graph: bool = True,
+) -> WanVAEEncoderConfig:
     return WanVAEEncoderConfig(
         checkpoint_path=AVAILABLE_WAN_VAE_CHECKPOINT_PATHS[checkpoint_name],
+        use_compile=use_compile,
+        use_cuda_graph=use_cuda_graph,
     )
 
 
@@ -154,6 +169,43 @@ def build_sv_2steps_chunk2_loc6_lightvae_lighttae(
         enable_sync_and_profile=True,
         encoder=_wan_vae_encoder(checkpoint_name="lightvae"),
         decoder=_teahv_vae_decoder_config(),
+        diffusion_model=DiffusionModelConfig(
+            seed=seed,
+            context_noise=128,
+            transformer=_transformer_config(
+                checkpoint_path=AVAILABLE_ALPADREAMS_CHECKPOINT_PATHS["single_view"][
+                    "vae_encoding"
+                ]["chunk2"],  # type: ignore[index]
+                cp_size=cp_size,
+                compile_network=compile_network,
+                num_views=1,
+                len_t_latent=2,
+                window_size_t=6,
+                encode_with_pixel_shuffle=False,
+            ),
+            scheduler=_scheduler_config(),
+        ),
+    )
+
+
+# Performance optimized version of the above config
+def build_sv_2steps_chunk2_loc6_lightvae_lighttae_perf(
+    *,
+    cp_size: int = 1,
+    compile_network: bool = True,
+    seed: int = 42,
+) -> AlpadreamsPipelineConfig:
+    """Single-view, chunk2, light Wan VAE HDMap encoder + LightTAE decoder."""
+    return AlpadreamsPipelineConfig(
+        text_encoder=CosmosReason1TextEncoderConfig(),
+        image_encoder=_wan_vae_encoder(
+            checkpoint_name="lightvae", use_compile=True, use_cuda_graph=True
+        ),
+        enable_sync_and_profile=True,
+        encoder=_wan_vae_encoder(
+            checkpoint_name="lightvae", use_compile=True, use_cuda_graph=True
+        ),
+        decoder=_teahv_vae_decoder_config(use_compile=True, use_cuda_graph=True),
         diffusion_model=DiffusionModelConfig(
             seed=seed,
             context_noise=128,
@@ -303,6 +355,7 @@ def build_mv_2steps_chunk4_loc8_pshuffle_lighttae(
 
 ALPADREAMS_CONFIG_BUILDERS: dict[str, Callable[..., AlpadreamsPipelineConfig]] = {
     "sv_2steps_chunk2_loc6_lightvae_lighttae": build_sv_2steps_chunk2_loc6_lightvae_lighttae,
+    "sv_2steps_chunk2_loc6_lightvae_lighttae_perf": build_sv_2steps_chunk2_loc6_lightvae_lighttae_perf,
     "sv_2steps_chunk2_loc6_vae_vae": build_sv_2steps_chunk2_loc6_vae_vae,
     "sv_2steps_chunk3_loc6_vae_vae": build_sv_2steps_chunk3_loc6_vae_vae,
     "sv_2steps_chunk4_loc8_pshuffle_lighttae": build_sv_2steps_chunk4_loc8_pshuffle_lighttae,
