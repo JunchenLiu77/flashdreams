@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Tiny AutoEncoder for Hunyuan Video
 (DNN for encoding / decoding videos to Hunyuan Video's latent space)
