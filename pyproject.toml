@@ -20,8 +20,24 @@ no-build-isolation-package = ["transformer-engine-torch"]
 [tool.pyright]
 extraPaths = ["flashdreams", "integrations/alpadreams"]
 
+[tool.ty.environment]
+python-version = "3.12"
+extra-paths = ["flashdreams", "integrations/alpadreams"]
+
+[tool.ty.src]
+# Auto-generated protobuf stubs — not maintained, no type annotations
+# Pre-existing shim with dynamic patterns that confuse type checkers
+exclude = [
+    "**/protos/",
+    "docker/model_specific/cfg_parallel_state.py",
+]
+
+[tool.ty.analysis]
+# transformer-engine has no type stubs; treat all imports as Any
+replace-imports-with-any = ["transformer_engine.**"]
+
 [dependency-groups]
-lint = ["pre-commit>=4.3.0"]
+lint = ["pre-commit>=4.3.0", "ty>=0.0.33"]
 
 # Sphinx toolchain for building docs locally (`uv run --group docs sphinx-build ...`).
 docs = [
