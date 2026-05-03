@@ -102,7 +102,7 @@ class WanInferencePipeline(
     pass an ``image`` to ``initialize_cache``. The pipeline config's
     ``encoder`` slot must agree (``None`` for T2V, an I2V config for I2V).
 
-    Typical usage example:
+    Examples:
 
         pipeline: WanInferencePipeline = ...
 

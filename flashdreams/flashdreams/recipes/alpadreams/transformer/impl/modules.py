@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cosmos DiT building blocks (attention, AdaLN-LoRA, cross-view ops)."""
+"""Cosmos DiT building blocks."""
 
 import math
 from dataclasses import dataclass
@@ -119,7 +119,7 @@ class PatchEmbed(nn.Module):
     """Patch embedding module for video/image inputs.
 
     Note: The patchify operation (rearranging from spatial to patch tokens) is expected
-    to be performed externally. This module expects post-patchified flattend input of shape (..., D)
+    to be performed externally. This module expects post-patchified flattened input of shape (..., D)
     where D = in_channels * temporal_patch_size * spatial_patch_size^2.
     """
 

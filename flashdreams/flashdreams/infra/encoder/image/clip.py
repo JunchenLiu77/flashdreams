@@ -52,7 +52,7 @@ class CLIPImageEncoder(Encoder):
 
     Stateless. Input images are ``[..., C, H, W]`` in ``[-1, 1]``.
 
-    Typical usage example:
+    Examples:
 
       >>> encoder = CLIPImageEncoderConfig().setup().to("cuda")
       >>> embeddings = encoder(image)  # [..., 257, 1280]

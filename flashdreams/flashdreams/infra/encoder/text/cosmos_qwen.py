@@ -60,7 +60,7 @@ class CosmosReason1TextEncoder(Encoder):
     hidden layers into a 100,352-dim embedding (28 x 3584); the DiT
     projects this to 1024 via its ``crossattn_proj``.
 
-    Typical usage example:
+    Examples:
 
       >>> encoder = CosmosReason1TextEncoderConfig().setup().to("cuda")
       >>> embeddings = encoder(["a beautiful sunset"])

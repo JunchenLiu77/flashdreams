@@ -110,7 +110,7 @@ class StreamInferencePipeline(
     transformer's ``predict_flow`` / ``postprocess_clean_latent`` overrides
     own the typing on the ``input`` argument they receive.
 
-    Typical usage example:
+    Examples:
 
         cache = pipeline.initialize_cache(transformer_context={...})
         output = pipeline.generate(0, cache, input=...)

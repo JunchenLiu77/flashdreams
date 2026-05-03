@@ -223,7 +223,7 @@ class TAEHV(nn.Module):
     latent_channels=48). The legacy ``"hy15"`` and ``"taecvx"`` variants are
     not ported.
 
-    Typical usage example:
+    Examples:
 
         taehv = TAEHV(checkpoint_path="...").to("cuda", torch.bfloat16)
         cache = taehv.prepare_cache()

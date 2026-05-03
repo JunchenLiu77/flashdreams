@@ -95,7 +95,7 @@ class AlpadreamsPipeline(
 ):
     """Alpadreams streaming inference pipeline (Cosmos DiT + HDMap + I2V mask).
 
-    Typical usage example:
+    Examples:
 
         pipeline: AlpadreamsPipeline = ...
 

@@ -47,11 +47,16 @@ from .utils import (
 
 @dataclass(kw_only=True)
 class CamCtrlInput:
-    """Per-AR-step camera payload (intrinsics, poses, world scale)."""
+    """Per-AR-step camera payload."""
 
     intrinsics: Tensor
+    """Per-frame camera intrinsics of shape ``[..., T, 4]`` (fx, fy, cx, cy)."""
+
     poses: Tensor
+    """Per-frame camera-to-world poses of shape ``[..., T, 4, 4]``."""
+
     world_scale: float
+    """Scalar applied to translations when normalizing world coordinates."""
 
 
 @dataclass(kw_only=True)
@@ -59,7 +64,10 @@ class I2VCamCtrlInput:
     """Composite per-AR-step input: image chunk + camera payload."""
 
     i2v: Tensor | None = None
+    """Per-AR-step image chunk to encode through the I2V branch; ``None`` when omitted."""
+
     camctrl: CamCtrlInput
+    """Per-AR-step camera intrinsics, poses, and world scale."""
 
 
 @dataclass(kw_only=True)
@@ -67,9 +75,13 @@ class I2VCamCtrlEmbeddings:
     """Encoded I2V latent + Plücker volume the transformer cross-attends to."""
 
     i2v: I2VCtrl
+    """Output of the Wan-VAE I2V encoder branch."""
+
     plucker: Tensor
+    """Plücker pixel volume after the PixelShuffle encoder."""
 
     _is_patchified: bool = False
+    """``True`` once the consuming transformer has patchified this payload in place."""
 
 
 @dataclass(kw_only=True)
@@ -81,9 +93,12 @@ class I2VCamCtrlEncoderConfig(InstantiateConfig["I2VCamCtrlEncoder"]):
     )
 
     i2v: I2VCtrlEncoderConfig = field(default_factory=I2VCtrlEncoderConfig)
+    """Config for the Wan-VAE I2V encoder branch."""
+
     plucker: PixelShuffleVAEEncoderConfig = field(
         default_factory=PixelShuffleVAEEncoderConfig
     )
+    """Config for the PixelShuffle pseudo-VAE encoder applied to the Plücker volume."""
 
 
 @dataclass(kw_only=True)
@@ -91,7 +106,11 @@ class I2VCamCtrlEncoderCache(EncoderAutoregressiveCache):
     """Per-AR-step cache for the composite I2V + camera-control encoder."""
 
     i2v: I2VCtrlEncoderCache
+    """Per-rollout cache for the I2V encoder branch."""
+
     plucker: PixelShuffleVAEEncoderCache
+    """Per-rollout cache for the Plücker PixelShuffle encoder branch."""
+
     camera_last_pose: Tensor | None = None
     """Last-pose anchor used to make ``compute_relative_poses_causal``
     deterministic across AR steps; ``None`` at AR step 0."""
@@ -118,6 +137,16 @@ class I2VCamCtrlEncoder(Encoder[I2VCamCtrlEncoderCache]):
         autoregressive_index: int = 0,
         cache: I2VCamCtrlEncoderCache | None = None,
     ) -> I2VCamCtrlEmbeddings:
+        """Encode the per-AR-step image chunk and Plücker camera volume.
+
+        Args:
+            input: Image chunk plus camera intrinsics/poses for this AR step.
+            autoregressive_index: AR step index forwarded to both branches.
+            cache: Per-rollout encoder cache; required (raises if ``None``).
+
+        Returns:
+            Composite I2V latent + Plücker embedding for the transformer to cross-attend to.
+        """
         assert cache is not None, "I2VCamCtrlEncoder requires a per-rollout cache."
         assert input.i2v is not None, (
             "I2VCamCtrlEncoder.forward requires the per-AR-step image chunk."
