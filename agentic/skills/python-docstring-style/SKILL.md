@@ -233,6 +233,78 @@ Practical rules:
 - **Custom section labels** like `Phases:`, `Per-step usage:`, `Typical usage example:` are **not** Napoleon-recognised. They render as plain paragraphs at best, and a stray blank-line can turn them into field-list warnings under `warningiserror`. Prefer `Note:` / `Example:` / `Examples:` (Napoleon-recognised) for anything callout-shaped. If a genuinely custom section is unavoidable, register it via `napoleon_custom_sections` in `conf.py` before using it in code.
 - **`Attributes:` section is legal**, but we document fields with PEP 257 attribute docstrings (see above) and let autodoc discover them — don't duplicate.
 
+## Developer voice — don't write a commit-log
+
+Docstrings and comments are read by the next developer opening the file, not by a reviewer scanning a diff. Describe the *interface* and any invariant a caller must not violate. Everything else — why the change was made, what it used to be, kernel / tolerance archaeology — belongs in a commit message or a review thread.
+
+Cut, on sight:
+
+- **Meta-narration.** `"Previously we..."`, `"As of this change..."`, `"now reads runtime state populated by..."`, `"no longer baked into the config"`. The diff tells that story.
+- **Decision logs that only restate the default.** `# Deliberately chosen so len_t != window_size_t / 2 != 1 — equal dims can mask off-by-one bugs.` The field's default is authoritative; if an invariant matters, state it once in one line, not as a paragraph.
+- **Retelling what a called function does.** Let the `:meth:` / `:func:` cross-reference carry it. `"Delegates to :meth:`X`."` is enough.
+- **"Callers who want Z patch on top via derive_config."** Obvious from the config module's contract — don't repeat in every builder.
+- **Example rollouts written as prose.** A `.. code-block:: bash` or the test file is cheaper to read.
+- **Tolerance archaeology.** One line for the floor (`"bf16 + TF32 ⇒ ~5e-2"`), not a bulleted breakdown per kernel.
+- **"Programming error" when an `assert` already says so.** The assert's message *is* the docstring for that case; a one-line summary plus the assert is enough.
+- **Restating the next 3 lines of code.** Rename a variable instead.
+
+Two before/after pairs:
+
+Bad (decision log + restated default):
+
+```python
+# Deliberately chosen so ``len_t != window_size_t / 2 != 1`` — equal
+# temporal dims can mask off-by-one bugs in the KV cache's
+# filling / steady bookkeeping. ``height`` and ``width`` are
+# supplied per rollout (see :meth:`…initialize_autoregressive_cache`).
+len_t: int = 2
+"""Pre-flatten latent frames per AR chunk."""
+```
+
+Good:
+
+```python
+len_t: int = 2
+"""Pre-flatten latent frames per AR chunk."""
+```
+
+Bad (inventory of what the function touches):
+
+```python
+"""Build a fully seeded cache for a new rollout.
+
+Routes raw ``context`` (and optional ``negative_context``) through
+:attr:`context_encoder` to produce the per-token context embeddings
+consumed by every block forward. Also stashes the per-rollout
+``(batch_size, height, width)`` and (when ``config.use_cuda_graph``
+is set) builds fresh :class:`CUDAGraphWrapper` instances sized to
+this rollout.
+"""
+```
+
+Good:
+
+```python
+"""Build a fully seeded cache for a new rollout.
+
+Runs ``context`` (and ``negative_context`` when CFG is on) through
+:attr:`context_encoder`, stashes the per-rollout
+``(batch_size, height, width)``, and — when ``config.use_cuda_graph``
+is set — builds fresh :class:`CUDAGraphWrapper` instances sized to
+this rollout.
+"""
+```
+
+### Polishing pass order
+
+When asked to tighten an existing file:
+
+1. Strip meta-narration and decision logs.
+2. Collapse any paragraph that restates adjacent field docstrings.
+3. Promote shape annotations out of prose into ``[B, L, C]`` tokens.
+4. Convert `"This method returns…"` → `"Return …"`; `"Will raise…"` → `"Raises…"`.
+5. Cut any `Args:` entry that only repeats the parameter name and type.
+
 ## Anti-patterns — don't adopt
 
 - reStructuredText `:param x:` / `:returns:` field lists — we use Google style. Napoleon tolerates mixing, but the rendered output is inconsistent.
@@ -241,3 +313,4 @@ Practical rules:
 - Single backticks in docstrings for non-references — Sphinx treats them as unresolved cross-references under the default role and warns.
 - Type info duplicated in `Args:` (`x (Tensor): …`) — the signature already has the type, and autodoc renders it.
 - Boilerplate "This function does X" opener — start with the verb directly.
+- Commit-log voice: `"Now uses…"`, `"Migrated from…"`, `"Originally…"`, `"Deliberately chosen so…"`. Describe the current contract, not the history.
