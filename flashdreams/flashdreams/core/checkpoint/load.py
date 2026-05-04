@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unified checkpoint loaders for local, S3, and Hugging Face sources."""
+"""Unified checkpoint loader that dispatches by source URL."""
 
 import io
 import json
@@ -584,7 +584,7 @@ def load_checkpoint(
         ValueError: ``checkpoint_type='distributed'`` without a ``model``, or
             an invalid ``checkpoint_type``.
 
-    Typical usage example:
+    Examples:
 
       >>> state = load_checkpoint("s3://bucket/foo.safetensors")
       >>> model = load_checkpoint("s3://bucket/dcp_dir/", model=my_model)

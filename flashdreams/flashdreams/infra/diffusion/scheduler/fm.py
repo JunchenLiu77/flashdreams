@@ -80,7 +80,7 @@ class FlowMatchScheduler(Scheduler):
             x_t = (1 - sigma(t)) * x0 + sigma(t) * eps
         return x0
 
-    Typical usage example:
+    Examples:
 
         scheduler = FlowMatchSchedulerConfig(
             num_inference_steps=4,
@@ -225,7 +225,7 @@ class FlowMatchScheduler(Scheduler):
         timestep: Tensor,
         rng: torch.Generator | None = None,
     ) -> Tensor:
-        """Forward corruption at an arbitrary timestep.
+        """Apply the forward corruption at an arbitrary timestep.
 
         Snaps ``timestep`` to the nearest entry of the warped training table
         and uses it as sigma in the standard lerp.

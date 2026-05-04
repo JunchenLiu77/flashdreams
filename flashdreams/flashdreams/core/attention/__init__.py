@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Attention primitives: native SDPA, ring attention, and block KV cache."""
+"""Attention primitives and KV cache for streaming inference."""
 
 from flashdreams.core.attention.kvcache import BlockKVCache
 from flashdreams.core.attention.native import NativeAttention

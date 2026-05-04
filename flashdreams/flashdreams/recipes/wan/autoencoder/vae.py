@@ -440,7 +440,7 @@ class Decoder3d(nn.Module):
         upsamples: list[nn.Module] = []
         for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:])):
             # Match legacy weight shapes: stages 1-3 halve their input dim
-            # because the preceding `Resample` already halved channels.
+            # because the preceding ``Resample`` already halved channels.
             if i in (1, 2, 3):
                 in_dim = in_dim // 2
             for _ in range(num_res_blocks + 1):
@@ -487,7 +487,7 @@ class WanVAE(nn.Module):
     direction is needed; the unused half's parameters and graph state are
     skipped, saving VRAM.
 
-    Typical usage example:
+    Examples:
 
         vae = WanVAE(vae_path="...", use_lightvae=True).to("cuda", torch.bfloat16)
         cache = vae.prepare_cache()
@@ -542,7 +542,7 @@ class WanVAE(nn.Module):
             "dropout": 0.0,
             "pruning_rate": pruning_rate,
         }
-        # Build on `meta` so only the checkpoint allocates real memory; skip
+        # Build on ``meta`` so only the checkpoint allocates real memory; skip
         # the disabled half so its params never materialise.
         with torch.device("meta"):
             if enable_encoder:

@@ -97,6 +97,7 @@ class CosmosTransformerCache(TransformerAutoregressiveCache):
     ``num_views == 1``."""
 
     autoregressive_index: int = -1
+    """AR step index for the chunk currently being processed; ``-1`` before the first ``start``."""
 
     def start(self, autoregressive_index: int) -> None:
         # Hoist per-block KV pre-update out of the (graph-captured) network
@@ -130,8 +131,13 @@ class CosmosTransformerConfig(InstantiateConfig["CosmosTransformer"]):
     )
 
     network: CosmosDiTNetworkConfig = field(default_factory=CosmosDiTNetworkConfig)
+    """Backbone Cosmos DiT network config."""
+
     dtype: torch.dtype = torch.bfloat16
+    """Network parameter / activation dtype."""
+
     checkpoint_path: str | None = None
+    """Optional path to a pretrained checkpoint; ``None`` keeps the random init."""
 
     state_dict_transform: Callable[[dict[str, Tensor]], dict[str, Tensor]] | None = None
     """Pre-load state-dict remap. Defaults to a ``net.`` prefix stripper."""

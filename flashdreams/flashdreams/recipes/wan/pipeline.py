@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol, cast, runtime_checkable
 
 import torch
 import torch.nn.functional as F
@@ -36,8 +37,8 @@ from flashdreams.infra.pipeline import (
     StreamInferencePipelineCache,
     StreamInferencePipelineConfig,
 )
-from flashdreams.recipes.wan.autoencoder.i2v import I2VCtrlEncoder, I2VCtrlEncoderCache
-from flashdreams.recipes.wan.autoencoder.vae import WanVAECache, WanVAEDecoder
+from flashdreams.recipes.wan.autoencoder.i2v import I2VCtrlEncoderCache
+from flashdreams.recipes.wan.autoencoder.vae import WanVAECache
 from flashdreams.recipes.wan.constants import NEGATIVE_PROMPT
 from flashdreams.recipes.wan.transformer.wan21 import (
     Wan21TransformerCache,
@@ -47,6 +48,21 @@ from flashdreams.recipes.wan.transformer.wan22 import (
     Wan22TransformerCache,
     Wan22TransformerConfig,
 )
+
+
+@runtime_checkable
+class _HasTemporalCompressionRatio(Protocol):
+    """Structural contract used by the I2V frame-count helpers.
+
+    ``get_num_input_frames`` and ``get_num_output_frames`` only need to know the encoder's
+    ``temporal_compression_ratio``; locking it to a concrete subclass
+    excludes downstream recipes (e.g. Lingbot World's
+    :class:`I2VCamCtrlEncoder`) that satisfy the same shape contract
+    without inheriting from :class:`I2VCtrlEncoder`.
+    """
+
+    @property
+    def temporal_compression_ratio(self) -> int: ...
 
 
 @dataclass(kw_only=True)
@@ -102,7 +118,7 @@ class WanInferencePipeline(
     pass an ``image`` to ``initialize_cache``. The pipeline config's
     ``encoder`` slot must agree (``None`` for T2V, an I2V config for I2V).
 
-    Typical usage example:
+    Examples:
 
         pipeline: WanInferencePipeline = ...
 
@@ -259,8 +275,11 @@ class WanInferencePipeline(
     def get_num_input_frames(self, autoregressive_index: int) -> int:
         """Number of input video frames the model expects at this AR step."""
         len_t = self._transformer_config.len_t
-        assert isinstance(self.encoder, I2VCtrlEncoder)
-        temporal_compression_ratio = self.encoder.temporal_compression_ratio
+        assert isinstance(self.encoder, _HasTemporalCompressionRatio), (
+            f"get_num_input_frames requires an I2V encoder exposing "
+            f"`temporal_compression_ratio`; got {type(self.encoder).__name__}."
+        )
+        temporal_compression_ratio = cast(int, self.encoder.temporal_compression_ratio)
         if autoregressive_index == 0:
             return 1 + (len_t - 1) * temporal_compression_ratio
         else:
@@ -269,8 +288,11 @@ class WanInferencePipeline(
     def get_num_output_frames(self, autoregressive_index: int) -> int:
         """Number of decoded video frames produced at this AR step."""
         len_t = self._transformer_config.len_t
-        assert isinstance(self.decoder, WanVAEDecoder)
-        temporal_compression_ratio = self.decoder.temporal_compression_ratio
+        assert isinstance(self.decoder, _HasTemporalCompressionRatio), (
+            f"get_num_output_frames requires a decoder exposing "
+            f"`temporal_compression_ratio`; got {type(self.decoder).__name__}."
+        )
+        temporal_compression_ratio = cast(int, self.decoder.temporal_compression_ratio)
         if autoregressive_index == 0:
             return 1 + (len_t - 1) * temporal_compression_ratio
         else:

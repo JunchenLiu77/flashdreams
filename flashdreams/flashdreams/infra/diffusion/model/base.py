@@ -70,7 +70,7 @@ class DiffusionModel(nn.Module, Generic[TransformerCacheT]):
     Generic over the transformer's AR cache type so user-facing typing on
     ``cache`` is preserved end-to-end.
 
-    Typical usage example:
+    Examples:
 
         model = config.setup().to("cuda")
         cache = model.transformer.initialize_autoregressive_cache(...)

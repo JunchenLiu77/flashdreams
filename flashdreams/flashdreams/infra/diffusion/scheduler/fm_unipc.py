@@ -204,7 +204,7 @@ class FlowMatchUniPCScheduler(Scheduler):
     Schedule buffers (sigmas + per-step coefficients) stay fp32 regardless
     of ``module.to(dtype)``.
 
-    Typical usage example:
+    Examples:
 
         scheduler = FlowMatchUniPCSchedulerConfig(
             num_inference_steps=50, shift=5.0,
@@ -396,7 +396,7 @@ class FlowMatchUniPCScheduler(Scheduler):
         timestep: Tensor,
         rng: torch.Generator | None = None,
     ) -> Tensor:
-        """Forward corruption at an arbitrary timestep.
+        """Apply the forward corruption at an arbitrary timestep.
 
         Snaps ``timestep`` to the nearest entry of the inference schedule
         on-device (no Python sync) and uses the matching sigma in the lerp.

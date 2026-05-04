@@ -39,7 +39,11 @@ class TeahvVAEDecoderConfig(InstantiateConfig["TeahvVAEDecoder"]):
     _target: type["TeahvVAEDecoder"] = field(default_factory=lambda: TeahvVAEDecoder)
 
     checkpoint_path: str = AVAILABLE_TAEHV_CHECKPOINT_PATHS["lighttae"]
+    """Path to a pretrained TAEHV checkpoint. Defaults to the ``lighttae`` weights."""
+
     dtype: torch.dtype = torch.bfloat16
+    """Network parameter / activation dtype."""
+
     use_cuda_graph: bool = True
     """Wrap the decoder forward in a CUDA graph for replay."""
 
@@ -60,23 +64,27 @@ class TeahvVAEDecoder(Decoder[TAEHVCache]):
     TEMPORAL_COMPRESSION_RATIO = TAEHV.TEMPORAL_COMPRESSION_RATIO
     SPATIAL_COMPRESSION_RATIO = TAEHV.SPATIAL_COMPRESSION_RATIO
 
-    # Lighttae per-channel scaling buffers (registered when need_scaled).
     mean: Tensor
-    std: Tensor
+    """Per-channel latent mean buffer; registered only when ``need_scaled``."""
 
-    # Per-channel scaling for the lighttae checkpoint.
+    std: Tensor
+    """Per-channel latent standard deviation buffer; registered only when ``need_scaled``."""
+
     _LIGHTTAE_MEAN: tuple[float, ...] = (
         -0.7571, -0.7089, -0.9113, 0.1075,
         -0.1745, 0.9653, -0.1517, 1.5508,
         0.4134, -0.0715, 0.5517, -0.3632,
         -0.1922, -0.9497, 0.2503, -0.2921,
     )  # fmt: skip
+    """Per-channel mean for the ``lighttae`` checkpoint's latent scaling."""
+
     _LIGHTTAE_STD: tuple[float, ...] = (
         2.8184, 1.4541, 2.3275, 2.6558,
         1.2196, 1.7708, 2.6052, 2.0743,
         3.2687, 2.1526, 2.8652, 1.5579,
         1.6382, 1.1253, 2.8251, 1.9160,
     )  # fmt: skip
+    """Per-channel standard deviation for the ``lighttae`` checkpoint's latent scaling."""
 
     def __init__(self, config: TeahvVAEDecoderConfig) -> None:
         super().__init__(config)
@@ -115,6 +123,17 @@ class TeahvVAEDecoder(Decoder[TAEHVCache]):
         autoregressive_index: int = 0,
         cache: TAEHVCache | None = None,
     ) -> Tensor:
+        """Decode a latent chunk to a video tensor in ``[-1, 1]``.
+
+        Args:
+            input: Latent of shape ``[..., Tl, Cl, Hl, Wl]``.
+            autoregressive_index: Unused by TAEHV; kept for the
+                :class:`~flashdreams.infra.decoder.Decoder` interface.
+            cache: Streaming decoder cache; created on the fly when ``None``.
+
+        Returns:
+            Video tensor of shape ``[..., T, C, H, W]`` in ``[-1, 1]``.
+        """
         if cache is None:
             cache = self.initialize_autoregressive_cache()
 

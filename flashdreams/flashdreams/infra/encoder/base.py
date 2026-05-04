@@ -74,7 +74,7 @@ class NullEncoder(Encoder[EncoderAutoregressiveCache]):
     Wire as the pipeline's ``encoder`` slot to pass already-encoded tensors
     straight to the diffusion model.
 
-    Typical usage example:
+    Examples:
 
         config = StreamInferencePipelineConfig(
             encoder=NullEncoderConfig(),

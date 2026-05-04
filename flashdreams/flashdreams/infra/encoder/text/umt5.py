@@ -61,7 +61,7 @@ class UMT5TextEncoder(Encoder):
 
     Stateless; called once before a rollout to encode prompts.
 
-    Typical usage example:
+    Examples:
 
       >>> encoder = UMT5TextEncoderConfig().setup().to("cuda")
       >>> embeddings = encoder(["a cat playing piano"])

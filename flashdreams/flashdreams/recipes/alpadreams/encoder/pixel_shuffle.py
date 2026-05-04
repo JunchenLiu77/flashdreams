@@ -39,6 +39,7 @@ class PixelShuffleVAEEncoderCache(EncoderAutoregressiveCache):
     """AR cache that tracks step index for frame selection."""
 
     autoregressive_index: int = -1
+    """AR step index for the chunk currently being processed; ``-1`` before the first call."""
 
 
 @dataclass(kw_only=True)
@@ -77,6 +78,18 @@ class PixelShuffleVAEEncoder(Encoder[PixelShuffleVAEEncoderCache]):
         autoregressive_index: int = 0,
         cache: PixelShuffleVAEEncoderCache | None = None,
     ) -> Tensor:
+        """Select frames for the current AR step and unshuffle into channels.
+
+        Args:
+            input: Video tensor of shape ``[..., T, C, H, W]`` in ``[-1, 1]``.
+            autoregressive_index: AR step index; AR step 0 keeps the first
+                frame in addition to the per-window selection.
+            cache: AR cache (created on the fly when ``None``); updated in place
+                with ``autoregressive_index``.
+
+        Returns:
+            Latent of shape ``[..., Tl, C * 64, H/8, W/8]``.
+        """
         if cache is None:
             cache = self.initialize_autoregressive_cache()
         cache.autoregressive_index = autoregressive_index
