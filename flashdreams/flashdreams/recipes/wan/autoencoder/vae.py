@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional, TypedDict
+from typing import Callable, Dict, Literal, Optional, TypedDict, get_args
 
 import torch
 import torch.nn as nn
@@ -117,15 +117,35 @@ class WanVAECache(StreamingEncoderCache, StreamingDecoderCache):
     """Per-block decoder cache."""
 
 
+# Forwarded verbatim to ``F.pad(mode=...)``; using its names avoids a
+# translation step and keeps a single source of truth for the runtime
+# check below (``get_args(PadMode)``) and the static type.
+PadMode = Literal["constant", "replicate"]
+
+
 class CausalConv3d(nn.Conv3d):
-    """3D conv with causal time padding and a streaming left-context slot."""
+    """3D conv with causal time padding and a streaming left-context slot.
+
+    ``pad_mode`` matches ``F.pad`` mode names:
+
+    - ``"constant"`` (default; Wan VAE): zero-pad spatial + temporal halos.
+    - ``"replicate"`` (FlashVSR projector): replicate-pad both halos. The
+      FlashVSR projector relies on this so the cold-start chunk's first
+      frames remain bounded at the activation level.
+    """
 
     # Concrete attribute types so callers don't see ``Tensor | Module``.
     _spatial_pad: tuple[int, int, int, int]
     _has_spatial_pad: bool
     _time_pad: int
+    _pad_mode: PadMode
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        *args,
+        pad_mode: PadMode = "constant",
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         # ``nn.Conv3d.padding`` is typed as the ``Union[int, _size, str]``
         # that the constructor accepts; narrow once here so the rest of
@@ -137,6 +157,10 @@ class CausalConv3d(nn.Conv3d):
         self._spatial_pad = (pw, pw, ph, ph)
         self._has_spatial_pad = ph > 0 or pw > 0
         self._time_pad = 2 * self.padding[0]
+        assert pad_mode in get_args(PadMode), (
+            f"CausalConv3d pad_mode must be one of {get_args(PadMode)}; got {pad_mode!r}"
+        )
+        self._pad_mode = pad_mode
         self.padding = (0, 0, 0)
 
     def forward(
@@ -147,7 +171,7 @@ class CausalConv3d(nn.Conv3d):
             x = torch.cat([prev, x], dim=2)
             time_pad = max(0, time_pad - prev.shape[2])
         if time_pad or self._has_spatial_pad:
-            x = F.pad(x, (*self._spatial_pad, time_pad, 0))
+            x = F.pad(x, (*self._spatial_pad, time_pad, 0), mode=self._pad_mode)
         return super().forward(x)
 
     def cache_step(
@@ -169,19 +193,36 @@ class CausalConv3d(nn.Conv3d):
 
 
 class RMS_norm(nn.Module):
-    """RMS-normalisation with a learnable channel scale (no bias)."""
+    """RMS-normalisation with a learnable channel scale and optional bias.
 
-    def __init__(self, dim: int, channel_first: bool = True, images: bool = True):
+    ``bias=False`` (default; Wan VAE) keeps the parameter count at one
+    learnable scale per channel. ``bias=True`` adds a matching learnable
+    offset (FlashVSR projector convention).
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        channel_first: bool = True,
+        images: bool = True,
+        bias: bool = False,
+    ):
         super().__init__()
         broadcast = (1, 1, 1) if not images else (1, 1)
         shape = (dim, *broadcast) if channel_first else (dim,)
         self.channel_first = channel_first
         self.scale = dim**0.5
         self.gamma = nn.Parameter(torch.ones(shape))
+        # Sentinel scalar zero when no bias is requested -- avoids a
+        # branch in ``forward`` and lets ``self.bias`` be a tensor or a
+        # Python float without changing the call site.
+        self.bias: nn.Parameter | float = (
+            nn.Parameter(torch.zeros(shape)) if bias else 0.0
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         dim = 1 if self.channel_first else -1
-        return F.normalize(x, dim=dim) * self.scale * self.gamma
+        return F.normalize(x, dim=dim) * self.scale * self.gamma + self.bias
 
 
 def _bt_flatten(x: torch.Tensor) -> torch.Tensor:
