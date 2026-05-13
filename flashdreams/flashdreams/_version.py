@@ -13,33 +13,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-[build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "flash-lingbot"
-version = "0.1.0a0"
-description = "Lingbot WebRTC integration for flashdreams"
-readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "flashdreams",
-    "aiohttp>=3.9",
-    "aiortc>=1.9",
-    "opencv-python-headless",
-    "scipy>=1.11",
-]
-
-[tool.uv.sources]
-flashdreams = { workspace = true }
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-]
-
-[tool.setuptools.packages.find]
-include = ["lingbot*"]
-exclude = ["tests"]
+__version__ = "0.1.0a0"

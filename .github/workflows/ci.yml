@@ -43,10 +43,13 @@ jobs:
       - name: Setup proxy cache
         uses: nv-gha-runners/setup-proxy-cache@main
 
-      - name: Run wheel build
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Build flashdreams wheel
         run: |
-          echo "Building wheels..."
-          # Add your wheel build commands here
+          uv run .github/scripts/sync_version.py || true
+          uv build --wheel --package flashdreams
 
       # Documentation is built and deployed by `.github/workflows/doc.yml`.
 
@@ -73,3 +76,36 @@ jobs:
         run: |
           echo "Running world model diffusion workloads..."
           # Add your world model diffusion commands here
+
+  # ===========================================================================
+  # Publish to Test PyPI -- runs only on main after lint passes.
+  # TEMPORARY: targets test.pypi.org while the project is pre-release.
+  # Switch --publish-url/--check-url to the real PyPI endpoints and the
+  # secret to PYPI_API_TOKEN when going public.
+  # ===========================================================================
+  publish-testpypi:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint]
+    runs-on: linux-amd64-cpu8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync versions
+        run: uv run .github/scripts/sync_version.py || true
+
+      - name: Build wheel
+        run: uv build --wheel --package flashdreams
+
+      - name: Publish to Test PyPI
+        # --check-url queries the index before uploading and silently skips
+        # files whose version already exists (equivalent to twine --skip-existing).
+        run: >
+          uv publish
+          --publish-url https://test.pypi.org/legacy/
+          --check-url https://test.pypi.org/simple/
+          --token ${{ secrets.TEST_PYPI_API_TOKEN }}
+          dist/*

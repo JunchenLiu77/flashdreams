@@ -19,7 +19,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flashdreams"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Flash video simulation pipeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -89,6 +89,12 @@ runners = [
     "opencv-python-headless",
     "scipy>=1.11",
 ]
+
+[tool.setuptools.dynamic]
+# Resolve version from _version.py (not __init__.py) so setuptools never
+# imports the full package at build time -- avoids triggering transitive
+# imports of heavy dependencies like torch / transformer-engine.
+version = {attr = "flashdreams._version.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["flashdreams*"]
