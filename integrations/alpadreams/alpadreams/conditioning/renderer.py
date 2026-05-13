@@ -228,12 +228,9 @@ class LudusRenderer:
         rgb = images[:, :, :, :3]
         if self.ctx.needs_vflip:
             rgb = rgb.flip(1)
-        return (
-            rgb.squeeze(0)
-            .permute(0, 3, 1, 2)
-            .contiguous()
-            .view(n_cameras, n_frames, 3, H, W)
-        )
+        # rgb is [N, H, W, 3] where N = n_cameras * n_frames.
+        # Rearrange to [n_cameras, n_frames, 3, H, W].
+        return rgb.permute(0, 3, 1, 2).contiguous().view(n_cameras, n_frames, 3, H, W)
 
     def cleanup(self) -> None:
         """Cleanup the renderer."""

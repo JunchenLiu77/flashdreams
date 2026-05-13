@@ -109,8 +109,17 @@ def test_ludus_timestamped_context_renders_frame(clipgt_scene_dir: Path) -> None
 
 
 @pytest.mark.manual
-def test_ludus_renderer_wrapper_renders_frame(clipgt_scene_dir: Path) -> None:
-    """Exercise the ``LudusRenderer`` wrapper that the gRPC server uses."""
+@pytest.mark.parametrize(
+    "n_frames", [1, 2, 3], ids=["single-frame", "two-frame", "multi-frame"]
+)
+def test_ludus_renderer_wrapper_renders_frames(
+    clipgt_scene_dir: Path, n_frames: int
+) -> None:
+    """Exercise the ``LudusRenderer`` wrapper that the gRPC server uses.
+
+    Parametrized over batch sizes to cover the single-image edge case where
+    the batch dimension is 1.
+    """
     from alpadreams.conditioning.renderer import (
         LudusRenderer,
         load_and_attach_ludus_scene,
@@ -151,13 +160,10 @@ def test_ludus_renderer_wrapper_renders_frame(clipgt_scene_dir: Path) -> None:
         device=device,
     )
 
-    # Render two frames so the batch dimension survives squeeze(0) inside
-    # render_all_frames_and_cameras (single-image batches lose the dim).
     # LudusRenderer expects camera-to-world transforms; it calls
     # torch.linalg.inv internally. For a smoke test identity poses are
     # fine -- the scene renders from the world origin and we just check
     # shapes/dtypes.
-    n_frames = 2
     camera_poses = torch.eye(4, device=device, dtype=torch.float32)
     camera_poses = camera_poses.unsqueeze(0).expand(n_frames, -1, -1).contiguous()
     timestamps_us = [int(scene_data.ego_poses[i].timestamp) for i in range(n_frames)]
@@ -168,7 +174,7 @@ def test_ludus_renderer_wrapper_renders_frame(clipgt_scene_dir: Path) -> None:
         frame_timestamps_us=timestamps_us,
     )
 
-    # [n_cameras=1, n_frames=2, 3, H, W]
+    # [n_cameras=1, n_frames={1, 2}, 3, H, W]
     assert output.shape == (1, n_frames, 3, target_h, target_w), f"Got {output.shape}"
     assert output.device.type == "cuda"
 
