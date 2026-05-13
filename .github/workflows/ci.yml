@@ -67,15 +67,28 @@ jobs:
       - name: Setup proxy cache
         uses: nv-gha-runners/setup-proxy-cache@main
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: |
+          # transformer-engine-torch is source-only and requires the CUDA
+          # toolkit (nvcc) to compile.  Skip it -- tests that need TE will
+          # gracefully skip via @_requires_te / skipif guards.
+          uv sync --extra dev \
+            --no-install-package transformer-engine-torch
+
       - name: Verify GPU availability
         run: |
           echo "Verifying GPU access..."
           nvidia-smi
 
-      - name: Run world model diffusion
+      - name: Run GPU unit tests
         run: |
-          echo "Running world model diffusion workloads..."
-          # Add your world model diffusion commands here
+          uv run --no-sync pytest -m ci_gpu -v \
+            --import-mode=importlib \
+            -c flashdreams/pyproject.toml \
+            flashdreams/tests/
 
   # ===========================================================================
   # Publish to Test PyPI -- runs only on main after lint passes.
