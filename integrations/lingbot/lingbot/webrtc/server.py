@@ -16,12 +16,17 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import logging
+import os
 import socket
 from pathlib import Path
 
+import torch
+import torch.distributed as dist
 from aiohttp import web
 
+from flashdreams.core.distributed import init as distributed_init
 from lingbot.webrtc.session import (
     LingbotRuntimeConfig,
     LingbotWebRTCSessionManager,
@@ -155,12 +160,66 @@ def create_app(
     return app
 
 
-def build_runtime_config(args: argparse.Namespace) -> LingbotRuntimeConfig:
+def build_runtime_config(
+    args: argparse.Namespace,
+    *,
+    device_override: str | None = None,
+    context_parallel_size: int = 1,
+) -> LingbotRuntimeConfig:
     return LingbotRuntimeConfig(
         config_name=args.config_name,
         compile_network=not args.no_compile,
-        device=args.device,
+        context_parallel_size=context_parallel_size,
+        device=device_override or args.device,
     )
+
+
+def initialize_distributed(
+    *, default_device: str | torch.device = "cuda:0"
+) -> tuple[torch.device, int, int]:
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is required for inference in the Lingbot WebRTC server."
+        )
+
+    has_rank = "RANK" in os.environ
+    has_world_size = "WORLD_SIZE" in os.environ
+    if has_rank != has_world_size:
+        raise RuntimeError(
+            "Distributed launch expects both RANK and WORLD_SIZE to be set."
+        )
+
+    distributed_launch = has_rank and has_world_size
+    if distributed_launch:
+        distributed_init()
+        world_rank = dist.get_rank()
+        world_size = dist.get_world_size()
+    else:
+        world_rank = 0
+        world_size = 1
+
+    device_count = torch.cuda.device_count()
+    if device_count < 1:
+        raise RuntimeError("CUDA device count must be >= 1 for inference.")
+    if distributed_launch:
+        local_rank = world_rank % device_count
+        torch_device = torch.device(f"cuda:{local_rank}")
+    else:
+        torch_device = torch.device(default_device)
+        if torch_device.type != "cuda":
+            raise RuntimeError(
+                f"CUDA device is required for inference, got {torch_device}."
+            )
+        if torch_device.index is None:
+            torch_device = torch.device("cuda:0")
+    torch.cuda.set_device(torch_device)
+
+    LOGGER.info(
+        "Rank %s initialized Lingbot runtime with context_parallel_size %s",
+        world_rank,
+        world_size,
+    )
+    return torch_device, world_rank, world_size
 
 
 def main() -> None:
@@ -169,11 +228,39 @@ def main() -> None:
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
     args = parse_args()
-    runtime_config = build_runtime_config(args)
+
+    runtime_device, world_rank, context_parallel_size = initialize_distributed(
+        default_device=args.device
+    )
+
+    runtime_config = build_runtime_config(
+        args,
+        device_override=str(runtime_device),
+        context_parallel_size=context_parallel_size,
+    )
     session_manager = LingbotWebRTCSessionManager(runtime_config=runtime_config)
-    app = create_app(session_manager=session_manager)
-    print(f"Starting on external IP: {get_external_ip()}")
-    web.run_app(app, host=args.host, port=args.port)
+    if world_rank == 0:
+        app = create_app(session_manager=session_manager)
+        print(f"Starting on external IP: {get_external_ip()}")
+        try:
+            web.run_app(app, host=args.host, port=args.port)
+        finally:
+            session_manager.send_exit_signal()
+    else:
+        try:
+            session_manager.wait_for_termination()
+        except KeyboardInterrupt:
+            LOGGER.warning("Worker rank interrupted, shutting down.")
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
+    if dist.is_initialized():
+        dist.barrier()
+        LOGGER.info("[Rank %s] Destroying process group", world_rank)
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

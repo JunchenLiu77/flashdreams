@@ -33,6 +33,7 @@ import traceback
 import uuid
 import warnings
 from concurrent import futures
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, Callable
@@ -76,6 +77,10 @@ from flashdreams.core.distributed import init as distributed_init
 from flashdreams.core.distributed.context_parallel import (
     cat_outputs_cp_object_list,
     split_inputs_cp_object_list,
+)
+from flashdreams.core.distributed.rank_orchestration import (
+    RankCoordinator,
+    distributed_op,
 )
 
 VERBOSE = False
@@ -140,60 +145,66 @@ class ControlSignal(IntEnum):
     INVALID = -1
 
 
-signal_counter: int = 0
+@dataclass(slots=True)
+class OpenSessionPayload:
+    """
+    An object carrying session open data to be distributed from server (rank 0) to all worker ranks.
+    """
 
+    session_id: str
+    camera_names: list[str]
+    camera_models_from_client: dict[str, FThetaCamera]
+    rig_to_camera_transforms: dict[str, np.ndarray]
+    initial_frames_list: list[video_model_pb2.Image]
+    text_prompts: list[TextPrompt]
+    hdmap_parquets: bytes
+    skip_video_generation: bool
+    return_hdmap_frames: bool
+    effective_seed: int | None
+    n_cameras: int
 
-def send_signal(signal: ControlSignal, device: torch.device) -> None:
-    global signal_counter
-
-    encoded_signal = torch.tensor(
-        [signal_counter, signal.value], dtype=torch.int64, device=device
-    )
-    if dist.is_initialized():
-        dist.broadcast(encoded_signal, src=0)
-
-    if VERBOSE:
-        rank = dist.get_rank() if dist.is_initialized() else 0
-        logger.debug(
-            f"[Rank {rank}] broadcast signal (#{signal_counter}) -> step={int(encoded_signal[1].item())}"
+    def __post_init__(self) -> None:
+        assert len(self.text_prompts) == 1, (
+            f"Expected 1 text prompt, got {len(self.text_prompts)}"
+        )
+        assert self.n_cameras == len(self.camera_names), (
+            f"Expected {self.n_cameras} camera names, got {len(self.camera_names)}"
+        )
+        assert self.n_cameras == len(self.camera_models_from_client), (
+            "Expected "
+            f"{self.n_cameras} camera models, got {len(self.camera_models_from_client)}"
+        )
+        assert self.n_cameras == len(self.rig_to_camera_transforms), (
+            "Expected "
+            f"{self.n_cameras} rig_to_camera transforms, got {len(self.rig_to_camera_transforms)}"
+        )
+        assert len(self.hdmap_parquets) > 0, (
+            f"Expected non-empty HD map parquets, got {len(self.hdmap_parquets)}"
         )
 
-    signal_counter += 1
 
+@dataclass(slots=True)
+class RenderVideoChunkPayload:
+    """
+    An object carrying video chunk generation data to be distributed from server (rank 0) to all worker ranks.
+    """
 
-def recv_signal(device: torch.device) -> ControlSignal:
-    global signal_counter
+    session_id: str
+    frame_timestamps_us: list[int]
+    object_info_per_frame: list[dict[str, Any]]
+    rig_poses_flu: np.ndarray | torch.Tensor | list[Any]
 
-    packet = torch.tensor([signal_counter, 0], dtype=torch.int64, device=device)
-    if dist.is_initialized():
-        dist.broadcast(packet, src=0)
-    else:
-        raise RuntimeError(
-            "Single-GPU mode, receiving signal on non-master rank should not happen"
+    def __post_init__(self) -> None:
+        assert self.session_id, "Expected non-empty session_id"
+        assert len(self.frame_timestamps_us) > 0, "Expected non-empty frame timestamps"
+        assert len(self.object_info_per_frame) == len(self.frame_timestamps_us), (
+            "Expected object_info_per_frame to align with frame_timestamps_us, got "
+            f"{len(self.object_info_per_frame)} vs {len(self.frame_timestamps_us)}"
         )
-
-    assert int(packet[0].item()) == signal_counter, (
-        f"Error: signal counter mismatch: {int(packet[0].item())} != {signal_counter}"
-    )
-
-    if VERBOSE:
-        rank = dist.get_rank() if dist.is_initialized() else 0
-        logger.debug(
-            f"[Rank {rank}] received signal (#{signal_counter}) -> step={int(packet[1].item())}"
+        assert len(self.rig_poses_flu) == len(self.frame_timestamps_us), (
+            "Expected rig_poses_flu to align with frame_timestamps_us, got "
+            f"{len(self.rig_poses_flu)} vs {len(self.frame_timestamps_us)}"
         )
-
-    signal_counter += 1
-
-    return ControlSignal(int(packet[1].item()))
-
-
-def sync_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    if dist.is_initialized():
-        kwargs_list = [kwargs]
-        dist.broadcast_object_list(kwargs_list, src=0)
-        return kwargs_list[0]
-    else:
-        return kwargs
 
 
 # decorator to capture exceptions and print stack trace
@@ -315,7 +326,7 @@ class WorldModelEngine:
         self.seed_for_every_rollout_default = seed_for_every_rollout
 
         # Load the video generation model (SV when n_cameras=1, MV when n_cameras>1)
-        self.api = build_alpadreams_conditioning_wrapper(
+        self.conditioning_wrapper = build_alpadreams_conditioning_wrapper(
             rank=self.rank,
             n_cameras=n_cameras,
             local_attn_size=local_attn_size,
@@ -346,13 +357,21 @@ class WorldModelEngine:
         # Session storage: session_id -> SessionState
         self.sessions: dict[str, SessionState] = {}
 
+        self.rank_coordinator = RankCoordinator(
+            device=self.device,
+            signal_type=ControlSignal,
+            is_master=self.is_master,
+            master_rank=self.MASTER_RANK,
+        )
+        self.rank_coordinator.register_distributed_ops(self)
+
     @property
     def is_master(self) -> bool:
         return self.rank == self.MASTER_RANK
 
     def _set_rollout_seed_for_next_generation(self, seed: int | None) -> None:
         """Set seed used by the underlying model for next start_generation call."""
-        self.api.set_rollout_seed(seed)
+        self.conditioning_wrapper.set_rollout_seed(seed)
 
     def _cleanup_session(self, session_id: str) -> None:
         """
@@ -376,90 +395,37 @@ class WorldModelEngine:
         Worker loop for non-master ranks.
 
         Waits for control signals from master rank and executes corresponding operations.
-        Supported signals:
-        - START: Initialize a new session
-        - VIDEO_CHUNK: Generate video frames
-        - FINALIZE_KV: Update KV cache (deferred from VIDEO_CHUNK for latency hiding)
-        - CLOSE: Clean up session resources
-        - EXIT: Terminate the worker loop
         """
-        control = ControlSignal.INVALID
+        self.rank_coordinator.worker_loop(exit_signal=ControlSignal.EXIT)
 
-        while True:
-            control = recv_signal(self.device)
-            match control:
-                case ControlSignal.START:
-                    self.open_session_on_all_ranks()
-                case ControlSignal.VIDEO_CHUNK:
-                    self.render_video_chunk_all_ranks()
-                case ControlSignal.FINALIZE_KV:
-                    self.finalize_kv_cache_all_ranks()
-                case ControlSignal.CLOSE:
-                    self.close_session_all_ranks()
-                case ControlSignal.EXIT:
-                    break
-                case _:
-                    raise ValueError(
-                        f"[Rank {self.rank}] received invalid control signal: {control}"
-                    )
-
-    def open_session_on_all_ranks(self, **kwargs) -> None:
-        """
-        Start a new generation session.
-        """
-
-        # --- Start the session ---------------------------------------------
+    def send_exit_signal(self) -> None:
         if self.is_master:
-            send_signal(ControlSignal.START, self.device)
-        else:
-            assert not kwargs, (
-                f"[rank {self.rank}] kwargs is not empty on non-master rank"
-            )
-        # Distribute data to let all ranks
-        kwargs = sync_kwargs(kwargs)
-        assert kwargs, f"[rank {self.rank}] kwargs is empty"
+            self.rank_coordinator.send_exit(exit_signal=ControlSignal.EXIT)
 
-        session_id = kwargs.get("session_id")
-        initial_frames_list = kwargs.get("initial_frames_list")
-        camera_names = kwargs.get("camera_names")
-        camera_models_from_client = kwargs.get("camera_models_from_client")
-        rig_to_camera_transforms = kwargs.get("rig_to_camera_transforms")
-        text_prompts = kwargs.get("text_prompts")
-        hdmap_parquets = kwargs.get("hdmap_parquets")
-        skip_video_generation = kwargs.get("skip_video_generation")
-        return_hdmap_frames = kwargs.get("return_hdmap_frames")
-        effective_seed = kwargs.get("effective_seed")
-        # -------------------------------------------------------------------
-        assert len(text_prompts) == 1, (  # ty:ignore[invalid-argument-type]
-            f"[rank {self.rank}] Expected 1 text prompt, got {len(text_prompts)}"  # ty:ignore[invalid-argument-type]
-        )
-        assert self.n_cameras == len(camera_names), (  # ty:ignore[invalid-argument-type]
-            f"[rank {self.rank}] Expected {self.n_cameras} camera names, got {len(camera_names)}"  # ty:ignore[invalid-argument-type]
-        )
-        assert self.n_cameras == len(camera_models_from_client), (  # ty:ignore[invalid-argument-type]
-            f"[rank {self.rank}] Expected {self.n_cameras} camera models, got {len(camera_models_from_client)}"  # ty:ignore[invalid-argument-type]
-        )
-        assert self.n_cameras == len(rig_to_camera_transforms), (  # ty:ignore[invalid-argument-type]
-            f"[rank {self.rank}] Expected {self.n_cameras} rig_to_camera transforms, got {len(rig_to_camera_transforms)}"  # ty:ignore[invalid-argument-type]
-        )
-        assert len(hdmap_parquets) > 0, (  # ty:ignore[invalid-argument-type]
-            f"[rank {self.rank}] Expected non-empty HD map parquets, got {len(hdmap_parquets)}"  # ty:ignore[invalid-argument-type]
-        )
+    @distributed_op(ControlSignal.START)
+    def open_session_on_all_ranks(
+        self, open_session_payload: OpenSessionPayload
+    ) -> None:
+        """
+        Start a new generation session. Called with payload by master rank and None by workers, internally broadcasts.
+        """
 
-        def short_text(text: str) -> str:
+        def short_text(text: str | None) -> str:
+            if text is None:
+                return ""
             return text[:20] + "..." if len(text) > 20 else text
 
         if VERBOSE:
             print(
-                f"[Rank {self.rank}] Open session {session_id}\n"
-                f"      ├────> # of initial frames: {len(initial_frames_list)}\n"
-                f"      ├────> # of cameras: {len(camera_models_from_client)}\n"
-                f"      ├────> Prompts: POSITIVE='{short_text(text_prompts[0].positive)}'\n"
-                f"      │               NEGATIVE='{short_text(text_prompts[0].negative)}'\n"
-                f"      ├────> HD map parquets: {len(hdmap_parquets)} bytes\n"
-                f"      ├────> Flag: skip_video_generation: {skip_video_generation}\n"
-                f"      ├────> Flag: return_hdmap_frames: {return_hdmap_frames}\n"
-                f"      ╰────> Effective random seed: {effective_seed}\n"
+                f"[Rank {self.rank}] Open session {open_session_payload.session_id}\n"
+                f"      ├────> # of initial frames: {len(open_session_payload.initial_frames_list)}\n"
+                f"      ├────> # of cameras: {len(open_session_payload.camera_models_from_client)}\n"
+                f"      ├────> Prompts: POSITIVE='{short_text(open_session_payload.text_prompts[0].positive)}'\n"
+                f"      │               NEGATIVE='{short_text(open_session_payload.text_prompts[0].negative)}'\n"
+                f"      ├────> HD map parquets: {len(open_session_payload.hdmap_parquets)} bytes\n"
+                f"      ├────> Flag: skip_video_generation: {open_session_payload.skip_video_generation}\n"
+                f"      ├────> Flag: return_hdmap_frames: {open_session_payload.return_hdmap_frames}\n"
+                f"      ╰────> Effective random seed: {open_session_payload.effective_seed}\n"
             )
 
         # Clean up all existing sessions (we only keep one session at a time)
@@ -475,20 +441,20 @@ class WorldModelEngine:
 
         # Retrieve profiler and start time
         profiler = get_profiler()
-        chunk_idx = profiler.get_chunk_idx(session_id)  # ty:ignore[invalid-argument-type]
+        chunk_idx = profiler.get_chunk_idx(open_session_payload.session_id)
 
         # 1. Convert to RGB tensor
-        res_W, res_H = self.api.video_resolution_wh
+        res_W, res_H = self.conditioning_wrapper.video_resolution_wh
         decoded_frames: list[torch.Tensor] = []
         with profiler.measure(
             "decode_initial_frames",
-            session_id=session_id,  # ty: ignore[invalid-argument-type]
+            session_id=open_session_payload.session_id,
             chunk_idx=chunk_idx,
         ):
-            for i, img_msg in enumerate(initial_frames_list):  # ty:ignore[invalid-argument-type]
+            for i, img_msg in enumerate(open_session_payload.initial_frames_list):
                 frame_tensor = decode_image(
-                    img_msg.data,  # ty:ignore[unresolved-attribute]
-                    video_model_pb2.ImageFormat.Name(img_msg.format),  # ty:ignore[unresolved-attribute]
+                    img_msg.data,
+                    video_model_pb2.ImageFormat.Name(img_msg.format),
                     target_resolution_hw=(res_H, res_W),
                 )  # [3, H, W]
                 decoded_frames.append(frame_tensor)
@@ -500,12 +466,12 @@ class WorldModelEngine:
         # 2. Load static world map from zip bytes
         with profiler.measure(
             "load_static_world_map",
-            session_id=session_id,  # ty: ignore[invalid-argument-type]
+            session_id=open_session_payload.session_id,
             chunk_idx=chunk_idx,
         ):
             scene_data = load_static_world_from_zip_bytes(
-                hdmap_parquets,  # ty:ignore[invalid-argument-type]
-                camera_names=camera_names,  # ty:ignore[invalid-argument-type]
+                open_session_payload.hdmap_parquets,
+                camera_names=open_session_payload.camera_names,
                 target_resolution_hw=(res_H, res_W),
             )
         logger.info(
@@ -513,73 +479,68 @@ class WorldModelEngine:
         )
 
         # Store client-provided intrinsics on scene_data so create_renderer can find them
-        for cam_name, cam_model in camera_models_from_client.items():  # ty:ignore[unresolved-attribute]
+        for (
+            cam_name,
+            cam_model,
+        ) in open_session_payload.camera_models_from_client.items():
             scene_data.camera_models[cam_name] = cam_model
 
         # 3. Create multi-camera renderer
-        renderer = self.api.create_renderer(scene_data, camera_names)  # ty:ignore[invalid-argument-type]
+        renderer = self.conditioning_wrapper.create_renderer(
+            scene_data, open_session_payload.camera_names
+        )
 
         # 4. Store session state (generation deferred to first render_video_chunk)
-        for cam_name, rig_to_cam in rig_to_camera_transforms.items():  # ty:ignore[unresolved-attribute]
-            rig_to_camera_transforms[cam_name] = torch.tensor(  # ty:ignore[invalid-assignment]
-                rig_to_cam, device=self.device
-            )
+        rig_to_camera_transforms_tensor = {
+            cam_name: torch.tensor(rig_to_cam, device=self.device)
+            for cam_name, rig_to_cam in open_session_payload.rig_to_camera_transforms.items()
+        }
         session_state = SessionState(
-            session_id=session_id,  # ty:ignore[invalid-argument-type]
-            camera_names=camera_names,  # ty:ignore[invalid-argument-type]
-            rig_to_camera_transforms=rig_to_camera_transforms,  # ty:ignore[invalid-argument-type]
+            session_id=open_session_payload.session_id,
+            camera_names=open_session_payload.camera_names,
+            rig_to_camera_transforms=rig_to_camera_transforms_tensor,
             scene_data=scene_data,
             renderer=renderer,
             initial_rgb_frames=initial_rgb_frames,
-            text_prompts=text_prompts,  # ty:ignore[invalid-argument-type]
-            skip_video_generation=skip_video_generation,  # ty:ignore[invalid-argument-type]
-            return_hdmap_frames=return_hdmap_frames,  # ty:ignore[invalid-argument-type]
-            effective_seed=effective_seed,
+            text_prompts=open_session_payload.text_prompts,
+            skip_video_generation=open_session_payload.skip_video_generation,
+            return_hdmap_frames=open_session_payload.return_hdmap_frames,
+            effective_seed=open_session_payload.effective_seed,
         )
-        self.sessions[session_id] = session_state  # ty:ignore[invalid-assignment]
+        self.sessions[open_session_payload.session_id] = session_state
         logger.info(
             f"[Rank {self.rank}] Session initialized, generation deferred to first render_video_chunk call"
         )
 
+    @distributed_op(ControlSignal.VIDEO_CHUNK)
     def render_video_chunk_all_ranks(
-        self, **kwargs
+        self, render_video_chunk_payload: RenderVideoChunkPayload
     ) -> video_model_pb2.VideoChunkReturn:
         """
-        Render a video chunk.
+        Render a video chunk. Called with payload by master rank and None by workers, internally broadcasts.
         """
-        # --- Start the rendering -----------------------------------------
-        if self.is_master:
-            send_signal(ControlSignal.VIDEO_CHUNK, self.device)
-        else:
-            assert not kwargs, (
-                f"[rank {self.rank}] kwargs is not empty on non-master rank"
-            )
-        # Distribute data to let all ranks
-        kwargs = sync_kwargs(kwargs)
-        assert kwargs, f"[rank {self.rank}] kwargs is empty"
-        session_id = kwargs.get("session_id")
-        frame_timestamps_us = kwargs.get("frame_timestamps_us")
-        object_info_per_frame = kwargs.get("object_info_per_frame")
-        rig_poses_flu = torch.tensor(kwargs.get("rig_poses_flu"), device=self.device)
+        rig_poses_flu_tensor: torch.Tensor = torch.as_tensor(
+            render_video_chunk_payload.rig_poses_flu, device=self.device
+        )
         # -------------------------------------------------------------------
         if VERBOSE:
             print(
-                f"[Rank {self.rank}] Render video chunk for session {session_id}\n"
-                f"      ├────> # of frames: {len(frame_timestamps_us)}\n"
-                f"      ├────> # of dynamic objects: {len(object_info_per_frame)}\n"
-                f"      ╰────> # of rig poses: {len(rig_poses_flu)}, type: {type(rig_poses_flu)}"
+                f"[Rank {self.rank}] Render video chunk for session {render_video_chunk_payload.session_id}\n"
+                f"      ├────> # of frames: {len(render_video_chunk_payload.frame_timestamps_us)}\n"
+                f"      ├────> # of dynamic objects: {len(render_video_chunk_payload.object_info_per_frame)}\n"
+                f"      ╰────> # of rig poses: {len(rig_poses_flu_tensor)}, type: {type(rig_poses_flu_tensor)}"
             )
 
         # Retrieve profiler and start time
         profiler = get_profiler()
-        chunk_idx = profiler.get_chunk_idx(session_id)  # ty:ignore[invalid-argument-type]
+        chunk_idx = profiler.get_chunk_idx(render_video_chunk_payload.session_id)
 
         # Get session state
-        session_state = self.sessions[session_id]  # ty:ignore[invalid-argument-type]
+        session_state = self.sessions[render_video_chunk_payload.session_id]
         skip_video_generation = session_state.skip_video_generation
 
         # multiGPU: split views to all ranks.
-        V_group = self.api.V_group
+        V_group = self.conditioning_wrapper.V_group
         if V_group is not None:
             camera_names = split_inputs_cp_object_list(
                 session_state.camera_names, cp_group=V_group
@@ -590,16 +551,19 @@ class WorldModelEngine:
         # 3. Parse rig trajectory (FLU) and derive per-camera poses
         with profiler.measure(
             "parse_trajectory_continuation",
-            session_id=session_id,  # ty: ignore[invalid-argument-type]
+            session_id=render_video_chunk_payload.session_id,
             chunk_idx=chunk_idx,
         ):
             # Compute per-camera trajectories:  camera_to_world[t] = rig_to_world[t] @ rig_to_camera
             camera_poses_per_view: dict[str, torch.Tensor] = {}
             for cam_name in camera_names:
                 rig_to_cam = session_state.rig_to_camera_transforms[cam_name]
-                camera_poses_per_view[cam_name] = compute_camera_poses_from_rig(
-                    rig_poses_flu, rig_to_cam
-                )  # ty:ignore[invalid-assignment]
+                camera_pose = compute_camera_poses_from_rig(
+                    rig_poses_flu_tensor, rig_to_cam
+                )
+                if not isinstance(camera_pose, torch.Tensor):
+                    camera_pose = torch.as_tensor(camera_pose, device=self.device)
+                camera_poses_per_view[cam_name] = camera_pose
 
         # Do a sanity check on the camera poses
         for cam_name, camera_pose in camera_poses_per_view.items():
@@ -607,8 +571,12 @@ class WorldModelEngine:
             assert camera_pose.device == self.device, (
                 f"Camera pose for {cam_name} is on device {camera_pose.device}, expected {self.device}"
             )
-            assert camera_pose.shape == (len(frame_timestamps_us), 4, 4), (  # ty:ignore[invalid-argument-type]
-                f"Camera pose for {cam_name} has shape {camera_pose.shape}, expected ({len(frame_timestamps_us), 4, 4})"  # ty:ignore[invalid-argument-type]
+            assert camera_pose.shape == (
+                len(render_video_chunk_payload.frame_timestamps_us),
+                4,
+                4,
+            ), (
+                f"Camera pose for {cam_name} has shape {camera_pose.shape}, expected ({len(render_video_chunk_payload.frame_timestamps_us)}, 4, 4)"
             )
         assert len(camera_poses_per_view) == len(camera_names), (
             f"[Rank {self.rank}] Expected {len(camera_names)} camera poses, got {len(camera_poses_per_view)}"
@@ -618,55 +586,55 @@ class WorldModelEngine:
         is_first_chunk = not session_state.generation_started
         if is_first_chunk:
             logger.info(
-                f"[Rank {self.rank}] Starting generation with {len(frame_timestamps_us)} frames (skip_video={skip_video_generation})..."  # ty:ignore[invalid-argument-type]
+                f"[Rank {self.rank}] Starting generation with {len(render_video_chunk_payload.frame_timestamps_us)} frames (skip_video={skip_video_generation})..."
             )
             self._set_rollout_seed_for_next_generation(session_state.effective_seed)
             logger.info(
                 f"[Rank {self.rank}] Using session random seed: {session_state.effective_seed} "
                 "(None means no explicit per-rollout seed)"
             )
-            with profiling_context(session_id, chunk_idx):  # ty:ignore[invalid-argument-type]
+            with profiling_context(render_video_chunk_payload.session_id, chunk_idx):
                 with profiler.measure(
                     "start_generation_total",
-                    session_id=session_id,  # ty:ignore[invalid-argument-type]
+                    session_id=render_video_chunk_payload.session_id,
                     chunk_idx=chunk_idx,
-                    num_frames=len(frame_timestamps_us),  # ty:ignore[invalid-argument-type]
+                    num_frames=len(render_video_chunk_payload.frame_timestamps_us),
                 ):
-                    output = self.api.start_generation(
+                    output = self.conditioning_wrapper.start_generation(
                         text_prompts=session_state.text_prompts,
                         initial_rgb_frames=session_state.initial_rgb_frames,
                         renderer=session_state.renderer,
                         camera_names=camera_names,
                         camera_poses_per_view=camera_poses_per_view,
-                        frame_timestamps_us=frame_timestamps_us,  # ty:ignore[invalid-argument-type]
+                        frame_timestamps_us=render_video_chunk_payload.frame_timestamps_us,
                         skip_video_generation=skip_video_generation,
                     )
-            session_state.bbox_state = output.state
+            session_state.alpadreams_state = output.state
             session_state.generation_started = True
         else:
-            assert session_state.bbox_state is not None, (
+            assert session_state.alpadreams_state is not None, (
                 "bbox_state should be set after first chunk"
             )
 
             logger.info(
-                f"[Rank {self.rank}] Continuing generation with {len(frame_timestamps_us)} frames (skip_video={skip_video_generation})..."  # ty:ignore[invalid-argument-type]
+                f"[Rank {self.rank}] Continuing generation with {len(render_video_chunk_payload.frame_timestamps_us)} frames (skip_video={skip_video_generation})..."
             )
-            with profiling_context(session_id, chunk_idx):  # ty:ignore[invalid-argument-type]
+            with profiling_context(render_video_chunk_payload.session_id, chunk_idx):
                 with profiler.measure(
                     "continue_generation_total",
-                    session_id=session_id,  # ty:ignore[invalid-argument-type]
+                    session_id=render_video_chunk_payload.session_id,
                     chunk_idx=chunk_idx,
-                    num_frames=len(frame_timestamps_us),  # ty:ignore[invalid-argument-type]
+                    num_frames=len(render_video_chunk_payload.frame_timestamps_us),
                 ):
-                    output = self.api.continue_generation(
-                        state=session_state.bbox_state,
+                    output = self.conditioning_wrapper.continue_generation(
+                        state=session_state.alpadreams_state,
                         camera_names=camera_names,
                         camera_poses_per_view=camera_poses_per_view,
-                        frame_timestamps_us=frame_timestamps_us,  # ty:ignore[invalid-argument-type]
-                        object_info_per_frame=object_info_per_frame,
+                        frame_timestamps_us=render_video_chunk_payload.frame_timestamps_us,
+                        object_info_per_frame=render_video_chunk_payload.object_info_per_frame,
                         skip_video_generation=skip_video_generation,
                     )
-            session_state.bbox_state = output.state
+            session_state.alpadreams_state = output.state
 
         # # TODO: Somehow this is necessary to avoid creating black frames in the output video. Need to investigate why...
         # with profiler.measure("synchronize_cuda", session_id=session_id, chunk_idx=chunk_idx):
@@ -680,7 +648,7 @@ class WorldModelEngine:
         camera_outputs = []
         with profiler.measure(
             "encode_output_frames",
-            session_id=session_id,  # ty: ignore[invalid-argument-type]
+            session_id=render_video_chunk_payload.session_id,
             chunk_idx=chunk_idx,
         ):
             for v_idx, cam_name in enumerate(camera_names):
@@ -737,25 +705,14 @@ class WorldModelEngine:
 
         return response
 
-    def finalize_kv_cache_all_ranks(self, **kwargs) -> None:
+    @distributed_op(ControlSignal.FINALIZE_KV)
+    def finalize_kv_cache_all_ranks(self, session_id: str) -> None:
         """
         Finalize KV cache update on all ranks.
 
         This is called after the gRPC response is sent to overlap KV cache update
         with network transfer time. All ranks must participate in this call.
         """
-        # --- Start the finalization -----------------------------------------
-        if self.is_master:
-            send_signal(ControlSignal.FINALIZE_KV, self.device)
-        else:
-            assert not kwargs, (
-                f"[rank {self.rank}] kwargs is not empty on non-master rank"
-            )
-        # Distribute data to let all ranks
-        kwargs = sync_kwargs({"session_id": kwargs.get("session_id")})
-        session_id = kwargs.get("session_id")
-        # -------------------------------------------------------------------
-
         if session_id not in self.sessions:
             logger.warning(
                 f"[Rank {self.rank}] Session {session_id} not found for finalization"
@@ -779,15 +736,15 @@ class WorldModelEngine:
             dist.barrier(device_ids=[self.device.index])
         tic = time.time_ns()
         if (
-            session_state.bbox_state is None
-            or session_state.bbox_state.pipeline_cache is None
+            session_state.alpadreams_state is None
+            or session_state.alpadreams_state.pipeline_cache is None
         ):
             logger.warning(
                 f"[Rank {self.rank}] Missing pipeline cache for finalization in session {session_id}"
             )
         else:
-            self.api.finalize_block_generation(
-                session_state.bbox_state.pipeline_cache,
+            self.conditioning_wrapper.finalize_block_generation(
+                session_state.alpadreams_state.pipeline_cache,
                 finalization_state,
             )
         duration_ns = time.time_ns() - tic
@@ -795,26 +752,14 @@ class WorldModelEngine:
             f"[Rank {self.rank}] Finalize block generation duration_ms={duration_ns / 1000000:.2f}"
         )
 
-    def close_session_all_ranks(self, **kwargs) -> None:
+    @distributed_op(ControlSignal.CLOSE)
+    def close_session_all_ranks(self, session_id: str) -> None:
         """
-        Stop a session.
+        Stop a session. Called with session_id by master rank and None by workers, internally broadcasts.
         """
-        # --- Stop the session --------------------------------------------
-        if self.is_master:
-            send_signal(ControlSignal.CLOSE, self.device)
-        else:
-            assert not kwargs, (
-                f"[rank {self.rank}] kwargs is not empty on non-master rank"
-            )
-        # Distribute data to let all ranks
-        kwargs = sync_kwargs(kwargs)
-        assert kwargs, f"[rank {self.rank}] kwargs is empty"
-        # -------------------------------------------------------------------
-        session_id = kwargs.get("session_id")
-
         # Clean up session resources (just session state)
         logger.info(f"[Rank {self.rank}] Closing session {session_id} on all ranks")
-        self._cleanup_session(session_id)  # ty:ignore[invalid-argument-type]
+        self._cleanup_session(session_id)
         logger.info(
             f"[Rank {self.rank}] Session {session_id} closed and removed from storage"
         )
@@ -874,66 +819,24 @@ class WorldModelEngine:
             )
 
 
-class WorldModelService(
-    WorldModelEngine, video_model_pb2_grpc.WorldModelServiceServicer
-):
+class WorldModelService(video_model_pb2_grpc.WorldModelServiceServicer):
     """gRPC service for bbox-conditioned video generation."""
 
     def __init__(
         self,
-        device: torch.device | str = torch.device("cuda:0"),
-        output_format: str = "png",
-        jpeg_quality: int = 90,
+        *,
+        engine: WorldModelEngine,
         recording_dir: Path | str | None = None,
-        n_cameras: int = 1,
-        local_attn_size: int | None = None,
-        sink_size: int | None = None,
-        context_parallel_size: int = 1,
-        seed_for_every_rollout: int | None = None,
-        resolution: str = "704p",
-        encode_with_pixel_shuffle: bool = False,
-        denoising_step_list: list[int] | None = None,
-        num_frames_per_block: int | None = None,
-        compile_net: bool = True,
-        use_cuda_graphs: bool = True,
-        s3_credential_path: str = "credentials/s3_checkpoint.secret",
-        upsampler: str = "none",
-        kv_cache_on_side_stream: bool = False,
-        no_tae: bool = False,
     ):
         """
         Initialize the World Model gRPC service.
 
         Args:
-            device: CUDA device used for inference.
-            output_format: Output image format ("png" or "jpeg").
-            jpeg_quality: JPEG quality (1-100) if using JPEG format.
+            engine: Shared distributed runtime used by all ranks.
             recording_dir: Directory to save session recordings (None to disable).
                            Each session will create a file named {session_id}.binlog in this directory.
-            n_cameras: Number of camera views (1 = single-view, >1 = multi-view).
-            local_attn_size: Local attention window size in latent frames.
-            sink_size: Sink size in latent frames.
         """
-        super().__init__(
-            device=device,
-            output_format=output_format,
-            jpeg_quality=jpeg_quality,
-            n_cameras=n_cameras,
-            local_attn_size=local_attn_size,
-            sink_size=sink_size,
-            context_parallel_size=context_parallel_size,
-            seed_for_every_rollout=seed_for_every_rollout,
-            resolution=resolution,
-            encode_with_pixel_shuffle=encode_with_pixel_shuffle,
-            denoising_step_list=denoising_step_list,
-            num_frames_per_block=num_frames_per_block,
-            compile_net=compile_net,
-            use_cuda_graphs=use_cuda_graphs,
-            s3_credential_path=s3_credential_path,
-            upsampler=upsampler,
-            kv_cache_on_side_stream=kv_cache_on_side_stream,
-            no_tae=no_tae,
-        )
+        self.engine = engine
 
         # Session recording - per-session recorders will be created in start_session
         self.recording_dir: Path | None = None
@@ -953,6 +856,38 @@ class WorldModelService(
         self._finalization_done.set()  # Initially done (no pending finalization)
 
         logger.info("WorldModelService initialized successfully")
+
+    @property
+    def sessions(self) -> dict[str, SessionState]:
+        return self.engine.sessions
+
+    @property
+    def conditioning_wrapper(self) -> AlpadreamsConditioningWrapper:
+        return self.engine.conditioning_wrapper
+
+    @property
+    def seed_for_every_rollout_default(self) -> int | None:
+        return self.engine.seed_for_every_rollout_default
+
+    @property
+    def n_cameras(self) -> int:
+        return self.engine.n_cameras
+
+    def open_session_on_all_ranks(
+        self, open_session_payload: OpenSessionPayload
+    ) -> None:
+        self.engine.open_session_on_all_ranks(open_session_payload)
+
+    def render_video_chunk_all_ranks(
+        self, render_video_chunk_payload: RenderVideoChunkPayload
+    ) -> video_model_pb2.VideoChunkReturn:
+        return self.engine.render_video_chunk_all_ranks(render_video_chunk_payload)
+
+    def finalize_kv_cache_all_ranks(self, session_id: str) -> None:
+        self.engine.finalize_kv_cache_all_ranks(session_id)
+
+    def close_session_all_ranks(self, session_id: str) -> None:
+        self.engine.close_session_all_ranks(session_id)
 
     def _cleanup_session(self, session_id: str) -> None:
         """
@@ -975,7 +910,7 @@ class WorldModelService(
             logger.info(f"Session recorder session {session_id} closed")
 
         # Remove session from storage if it exists
-        super()._cleanup_session(session_id)
+        self.engine._cleanup_session(session_id)
 
     @capture_exceptions
     def start_session(
@@ -1102,7 +1037,7 @@ class WorldModelService(
         )
 
         # 4. Start engine session
-        self.open_session_on_all_ranks(
+        open_session_payload = OpenSessionPayload(
             session_id=session_id,
             camera_names=camera_names,
             camera_models_from_client=camera_models_from_client,
@@ -1113,7 +1048,9 @@ class WorldModelService(
             skip_video_generation=skip_video_generation,
             return_hdmap_frames=return_hdmap_frames,
             effective_seed=effective_seed,
+            n_cameras=self.n_cameras,
         )
+        self.open_session_on_all_ranks(open_session_payload)
         logger.info(f"Session {session_id} started successfully")
 
         # 5. Create response
@@ -1183,12 +1120,12 @@ class WorldModelService(
         # Determine chunk size
         is_first_chunk = not session_state.generation_started
         if is_first_chunk:
-            chunk_size = self.api.initial_frame_chunk_size
+            chunk_size = self.conditioning_wrapper.initial_frame_chunk_size
             logger.info(
                 f"First chunk: expecting {chunk_size} poses (initial generation)"
             )
         else:
-            chunk_size = self.api.frame_chunk_size
+            chunk_size = self.conditioning_wrapper.frame_chunk_size
             logger.info(f"Continuation chunk: expecting {chunk_size} poses")
 
         # 3. Parse rig trajectory (FLU → RDF) and derive per-camera poses
@@ -1241,12 +1178,13 @@ class WorldModelService(
         logger.info(f"Parsed {len(object_info_per_frame)} frames with dynamic objects")
 
         # 6. Generate frames
-        response = self.render_video_chunk_all_ranks(
+        render_video_chunk_payload = RenderVideoChunkPayload(
             session_id=session_id,
             frame_timestamps_us=frame_timestamps_us,
             object_info_per_frame=object_info_per_frame,
             rig_poses_flu=rig_poses_flu,
         )
+        response = self.render_video_chunk_all_ranks(render_video_chunk_payload)
 
         # Echo back rig trajectory
         response.poses_and_timestamps_of_frames.CopyFrom(request.rig_trajectory)
@@ -1369,7 +1307,7 @@ class SessionState:
         self.effective_seed = effective_seed
 
         # Generation state (populated after first render_video_chunk)
-        self.bbox_state: AlpadreamsConditioningState | None = None
+        self.alpadreams_state: AlpadreamsConditioningState | None = None
         self.generation_started: bool = False
 
         # Pending KV cache finalization state (for async finalization after response)
@@ -1626,6 +1564,11 @@ def main() -> None:
         no_tae=args.no_tae,
     )
 
+    engine = WorldModelEngine(
+        seed_for_every_rollout=args.seed_for_every_rollout,
+        **model_kwargs,
+    )
+
     server: grpc.Server | None = None
     service: WorldModelService | None = None
     if world_rank == 0:  # Only rank 0 runs the HTTP server
@@ -1638,9 +1581,8 @@ def main() -> None:
 
         # Create service instance
         service = WorldModelService(
-            **model_kwargs,
+            engine=engine,
             recording_dir=args.record_dir,
-            seed_for_every_rollout=args.seed_for_every_rollout,
         )
 
         # Create gRPC server with increased message size limits
@@ -1679,13 +1621,10 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Error in server.wait_for_termination(): {e}")
             raise e
-
-        send_signal(ControlSignal.EXIT, device)
+        finally:
+            engine.send_exit_signal()
 
     else:  # non-rank 0 processes
-        engine = WorldModelEngine(
-            seed_for_every_rollout=args.seed_for_every_rollout, **model_kwargs
-        )
         try:
             engine.wait_for_termination()
         except KeyboardInterrupt:
