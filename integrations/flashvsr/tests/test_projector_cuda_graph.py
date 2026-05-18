@@ -21,9 +21,11 @@ wrapper enabled -- and asserts projector outputs and end-of-chunk cache
 slots match within tolerance. Mirrors the structure of
 ``flashdreams/tests/taehv/test_taehv_equivalence.py``.
 
-Requires CUDA + the FlashVSR LQ_proj_in checkpoint at
-``$LQ_PROJ_CKPT`` (default ``~/.cache/flashdreams/upsampler/weights/FlashVSR-v1.1/LQ_proj_in.ckpt``).
-Skipped automatically if either is missing.
+Requires CUDA. The ``LQ_proj_in.ckpt`` weights are resolved through the
+production :func:`flashdreams.core.checkpoint.load.load_checkpoint`
+path against the HF URL in :data:`AVAILABLE_FLASHVSR_CHECKPOINT_PATHS`,
+i.e. cached under ``~/.cache/huggingface/hub/`` -- a previously cached
+run or network access is required.
 
 Coverage:
 
@@ -42,23 +44,19 @@ Coverage:
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import torch
+from flashvsr.config import AVAILABLE_FLASHVSR_CHECKPOINT_PATHS
 from flashvsr.encoder.network import (
     Causal_LQ4x_Proj,
     Causal_LQ4x_Proj_Cache,
 )
 
-_DEFAULT_CKPT = "~/.cache/flashdreams/upsampler/weights/FlashVSR-v1.1/LQ_proj_in.ckpt"
-LQ_PROJ_CKPT = Path(os.environ.get("LQ_PROJ_CKPT", _DEFAULT_CKPT)).expanduser()
+from flashdreams.core.checkpoint.load import load_checkpoint
+
+_PROJECTOR_URL = AVAILABLE_FLASHVSR_CHECKPOINT_PATHS["v1.1-tiny-long"]["encoder"]
 
 _GPU_REASON = "projector CUDA-graph equivalence requires CUDA"
-_CKPT_REASON = (
-    f"projector checkpoint not found at {LQ_PROJ_CKPT}; set $LQ_PROJ_CKPT to override."
-)
 
 
 def _build_projector(
@@ -76,7 +74,9 @@ def _build_projector(
         use_cuda_graph=use_cuda_graph,
         use_compile=use_compile,
     ).to(device=device, dtype=dtype)
-    proj.load_state_dict(torch.load(LQ_PROJ_CKPT, map_location="cpu"), strict=True)
+    proj.load_state_dict(
+        load_checkpoint(_PROJECTOR_URL, map_location="cpu"), strict=True
+    )
     proj.eval().requires_grad_(False)
     return proj
 
@@ -152,7 +152,6 @@ _MODES: list[tuple[str, torch.dtype, bool, bool, float, float]] = [
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason=_GPU_REASON)
-@pytest.mark.skipif(not LQ_PROJ_CKPT.exists(), reason=_CKPT_REASON)
 @torch.no_grad()
 @pytest.mark.parametrize("chunk_size", [8, 16])
 @pytest.mark.parametrize(
@@ -210,7 +209,6 @@ def test_projector_streaming_equivalence(
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason=_GPU_REASON)
-@pytest.mark.skipif(not LQ_PROJ_CKPT.exists(), reason=_CKPT_REASON)
 @torch.no_grad()
 def test_projector_cache_swap_resets_wrapper() -> None:
     """A new external cache mid-stream must auto-invalidate the captured graph.
@@ -273,7 +271,6 @@ def test_projector_cache_swap_resets_wrapper() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason=_GPU_REASON)
-@pytest.mark.skipif(not LQ_PROJ_CKPT.exists(), reason=_CKPT_REASON)
 @torch.no_grad()
 def test_projector_cache_dict_rebind_resets_wrapper() -> None:
     """Rebinding ``cache.cache = {...}`` mid-stream must also reset the wrapper.

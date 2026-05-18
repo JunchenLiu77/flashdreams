@@ -15,26 +15,31 @@
 
 """Smoke tests for the FlashVSR recipe.
 
-The config-wiring tests run on every CPU CI invocation; the pipeline
-``.setup()`` smoke is opt-in (requires the FlashVSR-v1.1 weights staged
-under ``$FLASHVSR_WEIGHTS_ROOT/FlashVSR-v1.1`` -- defaulting to
-``~/.cache/flashdreams/upsampler/weights/FlashVSR-v1.1``) and
-auto-skips when the directory is absent.
+The config-wiring tests run on every CPU CI invocation. The pipeline
+``.setup()`` smoke (``test_flashvsr_pipeline_setup``) resolves the
+FlashVSR-v1.1 checkpoints through
+:func:`flashdreams.core.checkpoint.load.load_checkpoint` against the HF
+URLs in :data:`AVAILABLE_FLASHVSR_CHECKPOINT_PATHS` (i.e. the standard
+``~/.cache/huggingface/hub/`` cache populated by ``hf_hub_download``)
+-- a previously cached run or network access is required.
 """
 
 from __future__ import annotations
-
-import os
-from pathlib import Path
 
 import pytest
 import torch
 from flashvsr.config import (
     AVAILABLE_FLASHVSR_CHECKPOINT_PATHS,
+    RUNNER_FLASHVSR_V1_1_SPARSE_1_5,
+    RUNNER_FLASHVSR_V1_1_SPARSE_2_0,
     build_flashvsr_v1_1,
 )
 from flashvsr.encoder import FlashVSREncoderConfig
 from flashvsr.pipeline import FlashVSRPipelineConfig
+from flashvsr.runner import (
+    FlashVSRRunnerConfig,
+    _resolve_target_and_topk_ratio,
+)
 from flashvsr.transformer import FlashVSRTransformerConfig
 
 from flashdreams.infra.config import derive_config
@@ -73,16 +78,73 @@ def test_build_flashvsr_v1_1_wires_default_resolution() -> None:
     assert transformer_config.checkpoint_path == _V1_1_PATHS["dit"]
 
 
-def test_build_flashvsr_v1_1_rejects_misaligned_resolution() -> None:
-    """Target resolution must be divisible by 128 for the FlashVSR DiT."""
-    config = build_flashvsr_v1_1(input_H=540, input_W=960)
-    # 540 * 2 = 1080, which is not divisible by 128; the encoder asserts at setup.
-    with pytest.raises(AssertionError, match="divisible by 128"):
-        config.encoder.setup()
+def test_build_flashvsr_v1_1_crops_misaligned_resolution_to_128_multiple() -> None:
+    """Non-128-aligned upres dims are symmetric-cropped, not rejected.
+
+    Mirrors upstream FlashVSR's ``compute_scaled_and_target_dims`` /
+    ``upscale_then_center_crop`` helpers in
+    ``examples/WanVSR/infer_flashvsr_v1.1_tiny.py``: the encoder
+    bicubic-upsamples to ``(input * scale)``, then center-crops to the
+    largest 128-multiple.
+
+    ``projector_checkpoint_path=None`` keeps this CPU-only -- the random
+    projector init is enough to exercise the dim math without an HF
+    download.
+    """
+    # 540 * 2 = 1080 -> floor(1080 / 128) * 128 = 1024 (32 px top + 32 px
+    # bottom symmetric trim); 960 * 2 = 1920 is already 128-aligned.
+    config = derive_config(
+        build_flashvsr_v1_1(input_H=540, input_W=960),
+        encoder=dict(projector_checkpoint_path=None),
+    )
+    encoder = config.encoder.setup()
+    assert encoder.scaled_H == 1080
+    assert encoder.scaled_W == 1920
+    assert encoder.target_H == 1024
+    assert encoder.target_W == 1920
+
+    # Width-only crop case: 416 * 2 = 832 -> 768 (32+32); 768 * 2 = 1536
+    # stays 1536. Matches the ``outputs/example4.mp4`` size that
+    # surfaced this code path.
+    config_416 = derive_config(
+        build_flashvsr_v1_1(input_H=416, input_W=768),
+        encoder=dict(projector_checkpoint_path=None),
+    )
+    encoder_416 = config_416.encoder.setup()
+    assert encoder_416.scaled_H == 832
+    assert encoder_416.scaled_W == 1536
+    assert encoder_416.target_H == 768
+    assert encoder_416.target_W == 1536
+
+
+def test_build_flashvsr_v1_1_rejects_too_small_resolution() -> None:
+    """Inputs that don't cover one 128-multiple post-scale are rejected.
+
+    Builder and encoder both assert; the builder is the user-facing
+    entry point and saves a ``ZeroDivisionError`` in the ``topk_ratio``
+    formula, while the encoder re-checks at ``setup()`` time so
+    callers that construct ``FlashVSREncoderConfig`` directly still
+    get a clean error.
+    """
+    # 10 * 2 = 20 -> floor(20 / 128) * 128 = 0 -> the post-crop target is empty.
+    with pytest.raises(AssertionError, match="at least 128"):
+        build_flashvsr_v1_1(input_H=10, input_W=10)
+
+    # Direct EncoderConfig path (bypasses the builder).
+    encoder_config = FlashVSREncoderConfig(input_H=10, input_W=10, scale=2)
+    with pytest.raises(AssertionError, match="too small to crop"):
+        encoder_config.setup()
 
 
 def test_build_flashvsr_v1_1_scales_topk_with_resolution() -> None:
-    """``topk_ratio`` follows the legacy 768 * 1280 / (target_H * target_W) formula."""
+    """``topk_ratio`` follows the upstream 768 * 1280 / (target_H * target_W) formula.
+
+    The target dims here are the **post-crop** 128-multiple target the
+    encoder operates on, mirroring upstream's per-call
+    ``topk_ratio = sparse_ratio * 768*1280 / (th*tw)`` in
+    ``examples/WanVSR/infer_flashvsr_v1.1_tiny.py`` where ``(th, tw)``
+    are the cropped target.
+    """
     # Reference resolution at which the top-k budget matches sparse_ratio
     # exactly (the FlashVSR-tiny "base" target). Mirrors the literal in
     # ``flashvsr.config._transformer_config``.
@@ -91,7 +153,8 @@ def test_build_flashvsr_v1_1_scales_topk_with_resolution() -> None:
     def expected_topk(
         *, input_H: int, input_W: int, scale: int, sparse_ratio: float
     ) -> float:
-        target_H, target_W = input_H * scale, input_W * scale
+        target_H = ((input_H * scale) // 128) * 128
+        target_W = ((input_W * scale) // 128) * 128
         return sparse_ratio * REF_H * REF_W / (target_H * target_W)
 
     base = build_flashvsr_v1_1(input_H=384, input_W=640, sparse_ratio=2.0)
@@ -112,32 +175,135 @@ def test_build_flashvsr_v1_1_scales_topk_with_resolution() -> None:
         expected_topk(input_H=704, input_W=1280, scale=2, sparse_ratio=2.0)
     )
 
+    # Non-128-aligned: 416 * 2 = 832 -> 768; 768 * 2 = 1536. topk_ratio
+    # tracks the cropped (768, 1536), not the un-cropped (832, 1536),
+    # matching upstream's per-input formula.
+    misaligned = build_flashvsr_v1_1(input_H=416, input_W=768, sparse_ratio=1.5)
+    misaligned_xfm = misaligned.diffusion_model.transformer
+    assert isinstance(misaligned_xfm, FlashVSRTransformerConfig)
+    assert misaligned_xfm.topk_ratio == pytest.approx(
+        expected_topk(input_H=416, input_W=768, scale=2, sparse_ratio=1.5)
+    )
+    # Cross-check vs the un-cropped value: had we used target = 832 x 1536
+    # we'd get a smaller ratio (768*1280 / (832*1536) ~= 0.7692 < 0.8333).
+    uncropped = 1.5 * REF_H * REF_W / (832 * 1536)
+    assert misaligned_xfm.topk_ratio > uncropped
 
-_DEFAULT_WEIGHTS_ROOT = "~/.cache/flashdreams/upsampler/weights"
-_WEIGHTS_ROOT = (
-    Path(os.environ.get("FLASHVSR_WEIGHTS_ROOT", _DEFAULT_WEIGHTS_ROOT)).expanduser()
-    / "FlashVSR-v1.1"
+
+def test_shipped_runners_carry_their_sparse_ratio() -> None:
+    """``_build_sparse_ratio_variant`` populates ``runner.sparse_ratio``.
+
+    Without this, ``FlashVSRRunner.run`` would re-derive ``topk_ratio``
+    against the default ``sparse_ratio=2.0`` for every shipped slug,
+    silently overriding the ``-sparse-ratio-1.5`` preset.
+    """
+    assert isinstance(RUNNER_FLASHVSR_V1_1_SPARSE_2_0, FlashVSRRunnerConfig)
+    assert RUNNER_FLASHVSR_V1_1_SPARSE_2_0.sparse_ratio == pytest.approx(2.0)
+    assert isinstance(RUNNER_FLASHVSR_V1_1_SPARSE_1_5, FlashVSRRunnerConfig)
+    assert RUNNER_FLASHVSR_V1_1_SPARSE_1_5.sparse_ratio == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize(
+    ("input_H", "input_W", "scale", "sparse_ratio", "expected_target", "expected_topk"),
+    [
+        # 128-aligned base case -> target = REF -> topk_ratio == sparse_ratio.
+        (384, 640, 2, 2.0, (768, 1280), 2.0),
+        # Encoder's "scaffold" placeholder. Target = 1408 x 2560; topk
+        # shrinks by REF / target = 0.2727.
+        (704, 1280, 2, 1.5, (1408, 2560), 1.5 * 768 * 1280 / (1408 * 2560)),
+        # Non-128-aligned: height crops 832 -> 768; width stays 1536.
+        # This is the ``outputs/example4.mp4`` shape that surfaced the
+        # divisibility issue. topk_ratio scales against the **cropped**
+        # target, not the un-cropped one.
+        (416, 768, 2, 1.5, (768, 1536), 1.5 * 768 * 1280 / (768 * 1536)),
+    ],
 )
-# Mirror ``test_dit_replacement.py`` / ``parity_check/test_tcdecoder_parity.py``:
-# gate on a concrete file rather than the directory so an empty / partial
-# ``FlashVSR-v1.1/`` checkout still skips cleanly. ``LQ_proj_in.ckpt`` is
-# the smallest of the four weights; if a user has staged it the rest are
-# almost always present too.
-_PROJECTOR_CKPT = _WEIGHTS_ROOT / "LQ_proj_in.ckpt"
-_WEIGHTS_REASON = (
-    f"FlashVSR-v1.1 weights not found at {_PROJECTOR_CKPT}; "
-    "set $FLASHVSR_WEIGHTS_ROOT or stage with download_flashvsr_weights.sh."
-)
+def test_resolve_target_and_topk_ratio_matches_upstream(
+    input_H: int,
+    input_W: int,
+    scale: int,
+    sparse_ratio: float,
+    expected_target: tuple[int, int],
+    expected_topk: float,
+) -> None:
+    """The runner helper mirrors upstream's per-input topk formula."""
+    target_H, target_W, topk_ratio = _resolve_target_and_topk_ratio(
+        input_H=input_H,
+        input_W=input_W,
+        scale=scale,
+        sparse_ratio=sparse_ratio,
+    )
+    assert (target_H, target_W) == expected_target
+    assert topk_ratio == pytest.approx(expected_topk)
 
 
-@pytest.mark.skipif(not _PROJECTOR_CKPT.exists(), reason=_WEIGHTS_REASON)
+def test_resolve_target_and_topk_ratio_rejects_too_small_input() -> None:
+    """Inputs that don't fit one 128-multiple post-scale raise on the runner side."""
+    with pytest.raises(AssertionError, match="too small to crop"):
+        _resolve_target_and_topk_ratio(
+            input_H=10, input_W=10, scale=2, sparse_ratio=2.0
+        )
+
+
+def test_runner_overrides_topk_ratio_via_derive_config() -> None:
+    """End-to-end: shipped runner cfg + runner-style derive_config = correct topk.
+
+    Reproduces the exact ``derive_config`` shape that
+    :meth:`FlashVSRRunner.run` uses for a 416x768 input on the
+    ``sparse-ratio-1.5`` recipe and verifies both the encoder dims and
+    the transformer ``topk_ratio`` end up overridden.
+    """
+    runner_cfg = RUNNER_FLASHVSR_V1_1_SPARSE_1_5
+    # ``RunnerConfig.pipeline`` is typed as the abstract
+    # ``StreamInferencePipelineConfig`` whose ``encoder`` /
+    # ``transformer`` slots widen to the base configs; narrow once so
+    # FlashVSR-specific fields (``encoder.scale``,
+    # ``transformer.topk_ratio``) are accessible below.
+    runner_pipeline = runner_cfg.pipeline
+    assert isinstance(runner_pipeline, FlashVSRPipelineConfig)
+    runner_transformer = runner_pipeline.diffusion_model.transformer
+    assert isinstance(runner_transformer, FlashVSRTransformerConfig)
+
+    H, W = 416, 768
+    target_H, target_W, topk_ratio = _resolve_target_and_topk_ratio(
+        input_H=H,
+        input_W=W,
+        scale=runner_pipeline.encoder.scale,
+        sparse_ratio=runner_cfg.sparse_ratio,
+    )
+    pipeline_config = derive_config(
+        runner_pipeline,
+        encoder=dict(input_H=H, input_W=W),
+        diffusion_model=dict(transformer=dict(topk_ratio=topk_ratio)),
+    )
+    assert isinstance(pipeline_config, FlashVSRPipelineConfig)
+    assert pipeline_config.encoder.input_H == H
+    assert pipeline_config.encoder.input_W == W
+    # Other encoder knobs (scale, dtype, ...) pass through unchanged.
+    assert pipeline_config.encoder.scale == runner_pipeline.encoder.scale
+    transformer = pipeline_config.diffusion_model.transformer
+    assert isinstance(transformer, FlashVSRTransformerConfig)
+    assert transformer.topk_ratio == pytest.approx(topk_ratio)
+    # Sanity: the override actually changed something. Builder placeholder
+    # was 704x1280 (-> 1408x2560 -> topk_ratio ~= 0.409) which differs
+    # noticeably from the 416x768 (-> 768x1536 -> topk_ratio ~= 1.25)
+    # we just derived.
+    assert transformer.topk_ratio != pytest.approx(runner_transformer.topk_ratio)
+    # Match expected post-crop target for the same (H, W).
+    assert (target_H, target_W) == (768, 1536)
+
+
 def test_flashvsr_pipeline_setup() -> None:
     """``build_flashvsr_v1_1(...).setup()`` instantiates the full pipeline.
 
     Stays on CPU (no ``.to('cuda')``) so it can exercise the import +
-    checkpoint-load + module-graph paths on a CPU CI runner. Weight files
-    must already be staged; the ``skipif`` makes this auto-skip on CI
-    runners without weights staged.
+    checkpoint-load + module-graph paths on a CPU CI runner. Checkpoint
+    resolution flows through the production ``load_checkpoint(URL)`` path
+    in ``flashvsr.encoder/decoder/transformer.setup()``, which routes
+    HF URLs in :data:`AVAILABLE_FLASHVSR_CHECKPOINT_PATHS` through
+    ``hf_hub_download`` (i.e. the standard
+    ``~/.cache/huggingface/hub/`` cache) -- a previously cached run or
+    network access is required.
     """
     config = build_flashvsr_v1_1(
         input_H=384,

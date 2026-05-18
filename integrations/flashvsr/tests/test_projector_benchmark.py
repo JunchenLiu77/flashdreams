@@ -30,10 +30,8 @@ Marked ``manual`` + ``slow`` so it stays opt-in. Run with::
 
 from __future__ import annotations
 
-import os
 import statistics
 import time
-from pathlib import Path
 
 import pytest
 import torch
@@ -45,19 +43,7 @@ from flashvsr.transformer import FlashVSRTransformer
 # Mirrors the legacy ``_CHUNK_TARGET = {5: 8, 13: 16, 8: 8, 16: 16}``.
 _CHUNK_MODES: dict[int, tuple[int, int]] = {16: (13, 16), 8: (5, 8)}
 
-_DEFAULT_WEIGHTS_ROOT = "~/.cache/flashdreams/upsampler/weights"
-_WEIGHTS_ROOT = Path(
-    os.environ.get("FLASHVSR_WEIGHTS_ROOT", _DEFAULT_WEIGHTS_ROOT)
-).expanduser()
-_REQUIRED_FILE = (
-    _WEIGHTS_ROOT / "FlashVSR-v1.1" / "flashvsr_tiny_long" / "dit_state_dict.pt"
-)
-
 _GPU_REASON = "FlashVSR projector benchmark requires CUDA"
-_WEIGHTS_REASON = (
-    f"FlashVSR-v1.1 weights not found under {_WEIGHTS_ROOT}; "
-    "stage with internal/upsampler/scripts/download_flashvsr_weights.sh."
-)
 
 
 class _StageTimer:
@@ -131,7 +117,6 @@ def _instrument(pipeline: FlashVSRPipeline) -> dict[str, _StageTimer]:
 
 @pytest.mark.slow
 @pytest.mark.skipif(not torch.cuda.is_available(), reason=_GPU_REASON)
-@pytest.mark.skipif(not _REQUIRED_FILE.exists(), reason=_WEIGHTS_REASON)
 @pytest.mark.parametrize("chunk_size", [16])
 def test_flashvsr_per_stage_breakdown(chunk_size: int) -> None:
     """Report median per-stage wall time over the steady-replay window.
@@ -139,6 +124,11 @@ def test_flashvsr_per_stage_breakdown(chunk_size: int) -> None:
     Runs one cold chunk + 10 steady chunks, discards the first 3 steady
     chunks (which absorb wrapper warmup + capture), and prints the
     projector / DiT / decoder / color median ms for the remainder.
+    Checkpoints flow through ``build_flashvsr_v1_1(...).setup()``, which
+    routes the URLs in :data:`AVAILABLE_FLASHVSR_CHECKPOINT_PATHS`
+    through :func:`flashdreams.core.checkpoint.load.load_checkpoint`
+    (i.e. the ``~/.cache/huggingface/hub/`` cache) -- a cached run or
+    network access is required.
     """
     n_steady = 10
     n_warmup_skip = 3
