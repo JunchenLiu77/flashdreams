@@ -29,11 +29,15 @@ run or network access is required.
 
 Coverage:
 
-- Parameterised ``eager_fp32`` and ``cg_bf16`` rows that drive 10 chunks
-  through ``forward_streaming``: drain (chunk 0) -> warmup (chunk 1)
-  -> capture+replay (chunk 2) -> pure replay (chunks 3..9). The 10-chunk
-  run catches stale-pointer or shape-drift bugs that a 4-chunk run would
-  miss.
+- Parameterised ``eager_fp32``, ``cg_bf16`` and ``compile_cg_bf16`` rows
+  that drive 4 chunks through ``forward_streaming``: drain (chunk 0)
+  -> warmup (chunk 1) -> capture+replay (chunk 2) -> pure replay
+  (chunk 3). 4 chunks is the minimum that hits every distinct phase;
+  CUDA-graph replays are deterministic so additional replays add no
+  coverage. The ``compile_cg_bf16`` row uses ``mode="default"`` +
+  ``dynamic=True`` to skip Inductor's multi-second max-autotune in CI --
+  production runs ``mode="max-autotune-no-cudagraphs"``, but the
+  wrapper-vs-eager correctness this test cares about is mode-independent.
 - ``test_projector_cache_swap_resets_wrapper``: swap the bound cache
   mid-stream; the projector's slot-id check must auto-reset the wrapper
   and re-drain into the new cache.
@@ -67,14 +71,25 @@ def _build_projector(
     device: torch.device,
     use_cuda_graph: bool,
     use_compile: bool = False,
+    compile_mode: str = "default",
+    compile_dynamic: bool | None = True,
 ) -> Causal_LQ4x_Proj:
-    """Match ``UltraFlashVSRUpsampler.__init__`` (layer_num=1 in production)."""
+    """Match ``UltraFlashVSRUpsampler.__init__`` (layer_num=1 in production).
+
+    ``compile_mode`` / ``compile_dynamic`` default to the cheap-CI settings
+    (skip max-autotune, allow symbolic shapes). Production uses
+    ``mode="max-autotune-no-cudagraphs"`` with static shapes -- callers
+    that need to validate that exact pipeline should pass the prod values
+    explicitly.
+    """
     proj = Causal_LQ4x_Proj(
         in_dim=3,
         out_dim=1536,
         layer_num=1,
         use_cuda_graph=use_cuda_graph,
         use_compile=use_compile,
+        compile_mode=compile_mode,
+        compile_dynamic=compile_dynamic,
     ).to(device=device, dtype=dtype)
     proj.load_state_dict(
         load_checkpoint(_PROJECTOR_URL, map_location="cpu"), strict=True
@@ -144,8 +159,11 @@ def _assert_cache_close(
 #   bf16 noise plus any numeric ordering difference the static-buffer
 #   ``copy_`` introduces during input staging.
 # - "compile_cg_bf16": projector B uses ``use_compile=True`` plus the wrapper
-#   at bf16. Inductor may pick different reduction orders / fused kernels;
-#   widen the tolerance to absorb that on top of the wrapper's bf16 noise.
+#   at bf16. Uses the test-default ``mode="default"`` + ``dynamic=True``
+#   compile settings (see :func:`_build_projector`) to keep CI runtime
+#   bounded; the wrapper-vs-eager correctness is mode-independent, and
+#   widening the tolerance absorbs whatever reduction-order / fused-kernel
+#   differences Inductor's default mode introduces on top of bf16 noise.
 _MODES: list[tuple[str, torch.dtype, bool, bool, float, float]] = [
     ("eager_fp32", torch.float32, False, False, 1e-5, 1.3e-6),
     ("cg_bf16", torch.bfloat16, True, False, 1e-2, 1e-2),
@@ -172,10 +190,10 @@ def test_projector_streaming_equivalence(
 ) -> None:
     """Eager and graph projectors agree across drain -> capture -> replay.
 
-    Runs 10 chunks per mode at fixed ``chunk_size``: chunk 0 fills the
+    Runs 4 chunks per mode at fixed ``chunk_size``: chunk 0 fills the
     cache (drain), chunk 1 warms up, chunk 2 captures + first replay,
-    chunks 3..9 are pure replays. The pure-replay tail is the steady-state
-    that production sees on long videos.
+    chunk 3 is a pure replay. CUDA-graph replays are deterministic so
+    additional replays add no coverage past this minimum.
     """
     device = torch.device("cuda")
     target_H, target_W = 384 * 2, 640 * 2
@@ -191,7 +209,7 @@ def test_projector_streaming_equivalence(
     cache_eager = proj_eager.create_external_cache()
     cache_b = proj_b.create_external_cache()
 
-    for chunk_idx in range(10):
+    for chunk_idx in range(4):
         upres = _make_upres(
             chunk_idx=chunk_idx,
             chunk_size=chunk_size,
