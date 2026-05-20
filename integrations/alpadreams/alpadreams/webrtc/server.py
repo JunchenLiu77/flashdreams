@@ -1,17 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 from __future__ import annotations
 
@@ -24,6 +12,12 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 from aiohttp import web
+from alpadreams.config import ALPADREAMS_CONFIGS
+from alpadreams.transformer import CosmosTransformerConfig
+from alpadreams.webrtc.session import (
+    AlpadreamsRuntimeConfig,
+    AlpadreamsWebRTCSessionManager,
+)
 from loguru import logger
 
 from flashdreams.core.distributed import (
@@ -34,10 +28,6 @@ from flashdreams.core.distributed import (
 )
 from flashdreams.serving.network import get_external_ip
 from flashdreams.serving.webrtc.server import create_webrtc_app
-from lingbot.webrtc.session import (
-    LingbotRuntimeConfig,
-    LingbotWebRTCSessionManager,
-)
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -51,29 +41,32 @@ def configure_logging(*, world_rank: int | None = None) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Lingbot WebRTC server: serves /request_session and streams action-bound "
-            "video chunks over a single peer connection."
+            "Alpadreams WebRTC server: serves /request_session and streams "
+            "single-view WSAD-controlled video chunks over one peer connection."
         )
     )
     parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8081)
     parser.add_argument(
-        "--config_name",
+        "--pipeline_config_name",
         type=str,
-        default="lingbot-world-fast",
-        help="Lingbot config preset from PIPELINE_CONFIGS.",
+        default="alpadreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf",
+        choices=sorted(ALPADREAMS_CONFIGS),
     )
     parser.add_argument(
-        "--no_compile",
-        action="store_true",
-        help="Disable torch.compile when building the Lingbot pipeline.",
+        "--scene_dir",
+        type=Path,
+        default=Path(__file__).resolve().parents[4]
+        / "assets"
+        / "example_data"
+        / "alpadreams-webrtc"
+        / "0b10bce8-61f1-4350-8577-cf3c9493ffc3",
     )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda:0",
-        help="Torch device used for the Lingbot runtime.",
-    )
+    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--video_height", type=int, default=704)
+    parser.add_argument("--video_width", type=int, default=1280)
     parser.add_argument(
         "--warmup_chunks",
         type=int,
@@ -86,18 +79,31 @@ def parse_args() -> argparse.Namespace:
         default=600.0,
         help="Maximum seconds to wait for synthetic startup warmup chunks.",
     )
+    parser.add_argument(
+        "--debug_serve_hdmaps",
+        action="store_true",
+        help=(
+            "Stream rendered HDMap conditioning frames instead of generated RGB "
+            "video. This skips video model generation after initialization."
+        ),
+    )
+    parser.add_argument(
+        "--camera_name",
+        type=str,
+        default="camera_front_wide_120fov",
+    )
     return parser.parse_args()
 
 
 def create_app(
     *,
-    session_manager: LingbotWebRTCSessionManager | None = None,
+    session_manager: AlpadreamsWebRTCSessionManager | None = None,
 ) -> web.Application:
-    manager = session_manager or LingbotWebRTCSessionManager()
+    manager = session_manager or AlpadreamsWebRTCSessionManager()
     return create_webrtc_app(
         web_dir=WEB_DIR,
         session_manager=manager,
-        preload_name="Lingbot",
+        preload_name="Alpadreams",
     )
 
 
@@ -105,24 +111,29 @@ def build_runtime_config(
     args: argparse.Namespace,
     *,
     device_override: str | None = None,
-    context_parallel_size: int = 1,
-) -> LingbotRuntimeConfig:
-    return LingbotRuntimeConfig(
-        config_name=args.config_name,
-        compile_network=not args.no_compile,
-        context_parallel_size=context_parallel_size,
+) -> AlpadreamsRuntimeConfig:
+    return AlpadreamsRuntimeConfig(
+        pipeline_config_name=args.pipeline_config_name,
+        scene_dir=args.scene_dir,
+        seed=args.seed,
         device=device_override or args.device,
+        video_height=args.video_height,
+        video_width=args.video_width,
+        fps=args.fps,
+        camera_name=args.camera_name,
         warmup_chunks=args.warmup_chunks,
         warmup_timeout_s=args.warmup_timeout_s,
+        debug_serve_hdmaps=args.debug_serve_hdmaps,
     )
 
 
 def initialize_distributed(
-    *, default_device: str | torch.device = "cuda:0"
+    *,
+    default_device: str | torch.device = "cuda:0",
 ) -> tuple[torch.device, int, int]:
     if not torch.cuda.is_available():
         raise RuntimeError(
-            "CUDA is required for inference in the Lingbot WebRTC server."
+            "CUDA is required for inference in the Alpadreams WebRTC server."
         )
 
     has_rank = "RANK" in os.environ
@@ -159,27 +170,33 @@ def initialize_distributed(
 
     configure_logging(world_rank=world_rank)
     logger.info(
-        "Rank {} initialized Lingbot runtime with context_parallel_size {}",
+        "Rank {} initialized Alpadreams runtime with context_parallel_size {}",
         world_rank,
         world_size,
     )
     return torch_device, world_rank, world_size
 
 
+def _validate_single_view_config(config_name: str) -> None:
+    pipeline_cfg = ALPADREAMS_CONFIGS[config_name]
+    transformer_cfg = pipeline_cfg.diffusion_model.transformer
+    if not isinstance(transformer_cfg, CosmosTransformerConfig):
+        raise TypeError("Alpadreams WebRTC requires a CosmosTransformerConfig.")
+    if transformer_cfg.num_views != 1:
+        raise ValueError(
+            "Alpadreams WebRTC only serves single-view configs; "
+            f"{config_name!r} has num_views={transformer_cfg.num_views}."
+        )
+
+
 def main() -> None:
     configure_logging()
     args = parse_args()
+    _validate_single_view_config(args.pipeline_config_name)
 
-    runtime_device, world_rank, context_parallel_size = initialize_distributed(
-        default_device=args.device
-    )
-
-    runtime_config = build_runtime_config(
-        args,
-        device_override=str(runtime_device),
-        context_parallel_size=context_parallel_size,
-    )
-    session_manager = LingbotWebRTCSessionManager(runtime_config=runtime_config)
+    runtime_device, world_rank, _ = initialize_distributed(default_device=args.device)
+    runtime_config = build_runtime_config(args, device_override=str(runtime_device))
+    session_manager = AlpadreamsWebRTCSessionManager(runtime_config=runtime_config)
     if world_rank == 0:
         app = create_app(session_manager=session_manager)
         logger.info("Starting on external IP: {}", get_external_ip())
@@ -200,7 +217,6 @@ def main() -> None:
 
     if dist.is_initialized():
         dist.barrier()
-        logger.info("[Rank {}] Destroying process group", world_rank)
         dist.destroy_process_group()
 
 
