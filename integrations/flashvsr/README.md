@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # flashdreams-flashvsr
 
 FlashVSR-v1.1 streaming video super-resolution (LR projector + distilled
