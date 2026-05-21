@@ -105,6 +105,7 @@ void Buffer::free(Module module)
     {
     case CPU:   cpuFree(m_cpuPtr, m_cpuBase, m_hints); break;
     case Cuda:  cudaFree(m_cudaPtr, m_cudaBase); break;
+    default:    break;
     }
     m_exists &= ~module;
 }
@@ -319,8 +320,8 @@ void Buffer::init(S64 size, U32 hints, int align)
 
     m_cpuPtr    = NULL;
     m_cpuBase   = NULL;
-    m_cudaPtr   = NULL;
-    m_cudaBase  = NULL;
+    m_cudaPtr   = 0;
+    m_cudaBase  = 0;
 }
 
 //------------------------------------------------------------------------
@@ -540,12 +541,12 @@ void Buffer::cudaAlloc(CUdeviceptr& cudaPtr, CUdeviceptr& cudaBase, S64 size, in
 
 void Buffer::cudaFree(CUdeviceptr& cudaPtr, CUdeviceptr& cudaBase)
 {
-    FW_ASSERT((cudaPtr == NULL) == (cudaBase == NULL));
+    FW_ASSERT((cudaPtr == 0) == (cudaBase == 0));
     if (cudaPtr)
     {
         checkCudaDriverError("cuMemFree", cuMemFree(cudaBase));
-        cudaPtr = NULL;
-        cudaBase = NULL;
+        cudaPtr = 0;
+        cudaBase = 0;
     }
 }
 
@@ -621,9 +622,9 @@ void Buffer::memcpyXtoX(void* dstHost, CUdeviceptr dstDevice, const void* srcHos
 
     memcpyXtoX(
         (dstHost) ? (U8*)dstHost + mid : NULL,
-        (dstHost) ? NULL : (CUdeviceptr)(dstDevice + mid),
+        (dstHost) ? (CUdeviceptr)0 : (CUdeviceptr)(dstDevice + mid),
         (srcHost) ? (const U8*)srcHost + mid : NULL,
-        (srcHost) ? NULL : (CUdeviceptr)(srcDevice + mid),
+        (srcHost) ? (CUdeviceptr)0 : (CUdeviceptr)(srcDevice + mid),
         size - mid, async, cudaStream);
 }
 

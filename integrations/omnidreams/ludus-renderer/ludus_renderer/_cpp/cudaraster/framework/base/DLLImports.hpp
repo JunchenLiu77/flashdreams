@@ -38,9 +38,13 @@
 
 #if (FW_USE_CUDA)
 #   include <cuda.h>
+#   ifdef _MSC_VER
 #   pragma warning(push,3)
+#   endif
 #       include <vector_functions.h> // float4, etc.
+#   ifdef _MSC_VER
 #   pragma warning(pop)
+#   endif
 #endif
 
 #if (!FW_CUDA) && defined(_WIN32)

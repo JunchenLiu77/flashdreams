@@ -69,12 +69,15 @@ def _get_plugin():
             os.environ["PATH"] += ";" + cl_path
 
     # Compiler options.
-    # WARNING: "-w" suppresses ALL C/C++/CUDA compiler diagnostics. This hides
-    # potentially serious issues (uninitialized values, signed/unsigned bugs,
-    # deprecated APIs, ABI mismatches, etc.) and should ideally be fixed rather
-    # than ignored.
-    common_opts = ["-DNVDR_TORCH", "-DFW_DO_NOT_OVERRIDE_NEW_DELETE", "-w"]
-    cc_opts = []
+    common_defines = ["-DNVDR_TORCH", "-DFW_DO_NOT_OVERRIDE_NEW_DELETE"]
+    cc_opts = common_defines + ["-Wall", "-Werror"]
+    cuda_opts = common_defines + [
+        "-lineinfo",
+        "-Xcompiler", "-Wall,-Werror",
+        # Suppress nvcc warning about __device__ functions redeclared without
+        # __device__ in out-of-line template definitions (Math.hpp MatrixBase).
+        "-diag-suppress", "20037",
+    ]
     if os.name == "nt":
         cc_opts += ["/wd4067", "/wd4624"]
 
@@ -134,8 +137,8 @@ def _get_plugin():
         name=plugin_name,
         sources=source_paths,
         extra_include_paths=extra_include_paths,
-        extra_cflags=common_opts + cc_opts,
-        extra_cuda_cflags=common_opts + ["-lineinfo"],
+        extra_cflags=cc_opts,
+        extra_cuda_cflags=cuda_opts,
         extra_ldflags=ldflags,
         with_cuda=True,
         verbose=True,

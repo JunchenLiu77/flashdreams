@@ -27,7 +27,9 @@
 
 #pragma once
 
+#ifdef _MSC_VER
 #pragma warning(disable:4530) // C++ exception handler used, but unwind semantics are not enabled.
+#endif
 #include <new>
 #include <string.h>
 
@@ -117,8 +119,8 @@ typedef U32                 UPTR;
 #define FW_S32_MIN          (~0x7FFFFFFF)
 #define FW_S32_MAX          (0x7FFFFFFF)
 #define FW_U64_MAX          ((U64)(S64)-1)
-#define FW_S64_MIN          ((S64)-1 << 63)
-#define FW_S64_MAX          (~((S64)-1 << 63))
+#define FW_S64_MIN          ((S64)(-9223372036854775807LL - 1))
+#define FW_S64_MAX          ((S64)9223372036854775807LL)
 #define FW_F32_MIN          (1.175494351e-38f)
 #define FW_F32_MAX          (3.402823466e+38f)
 #define FW_F64_MIN          (2.2250738585072014e-308)
