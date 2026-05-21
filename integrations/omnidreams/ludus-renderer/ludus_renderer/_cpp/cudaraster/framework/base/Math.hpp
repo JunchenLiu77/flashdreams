@@ -59,8 +59,8 @@ FW_CUDA_FUNC F32    floor           (F32 a)         { return ::floorf(a); }
 FW_CUDA_FUNC F64    floor           (F64 a)         { return ::floor(a); }
 FW_CUDA_FUNC F32    ceil            (F32 a)         { return ::ceilf(a); }
 FW_CUDA_FUNC F64    ceil            (F64 a)         { return ::ceil(a); }
-FW_CUDA_FUNC U64    doubleToBits    (F64 a)         { return *(U64*)&a; }
-FW_CUDA_FUNC F64    bitsToDouble    (U64 a)         { return *(F64*)&a; }
+FW_CUDA_FUNC U64    doubleToBits    (F64 a)         { U64 r; memcpy(&r, &a, sizeof(r)); return r; }
+FW_CUDA_FUNC F64    bitsToDouble    (U64 a)         { F64 r; memcpy(&r, &a, sizeof(r)); return r; }
 
 #if FW_CUDA
 FW_CUDA_FUNC F32    pow             (F32 a, F32 b)  { return ::__powf(a, b); }
@@ -91,13 +91,13 @@ inline F64          log2            (F64 a)         { return ::log(a) / ::log(2.
 inline F32          sin             (F32 a)         { return ::sinf(a); }
 inline F32          cos             (F32 a)         { return ::cosf(a); }
 inline F32          tan             (F32 a)         { return ::tanf(a); }
-inline U32          floatToBits     (F32 a)         { return *(U32*)&a; }
-inline F32          bitsToFloat     (U32 a)         { return *(F32*)&a; }
+inline U32          floatToBits     (F32 a)         { U32 r; memcpy(&r, &a, sizeof(r)); return r; }
+inline F32          bitsToFloat     (U32 a)         { F32 r; memcpy(&r, &a, sizeof(r)); return r; }
 inline F32          exp2            (int a)         { return bitsToFloat(clamp(a + 127, 1, 254) << 23); }
 inline F32          fastMin         (F32 a, F32 b)  { return (a + b - abs(a - b)) * 0.5f; }
 inline F32          fastMax         (F32 a, F32 b)  { return (a + b + abs(a - b)) * 0.5f; }
-inline F64          fastMin         (F64 a, F64 b)  { return (a + b - abs(a - b)) * 0.5f; }
-inline F64          fastMax         (F64 a, F64 b)  { return (a + b + abs(a - b)) * 0.5f; }
+inline F64          fastMin         (F64 a, F64 b)  { return (a + b - abs(a - b)) * 0.5; }
+inline F64          fastMax         (F64 a, F64 b)  { return (a + b + abs(a - b)) * 0.5; }
 #endif
 
 FW_CUDA_FUNC F32    scale           (F32 a, int b)  { return a * exp2(b); }
