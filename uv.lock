@@ -781,12 +781,16 @@ source = { editable = "integrations/flashvsr" }
 dependencies = [
     { name = "block-sparse-attn" },
     { name = "flashdreams" },
+    { name = "grpcio" },
     { name = "mediapy" },
     { name = "opencv-python" },
+    { name = "pillow" },
+    { name = "protobuf" },
 ]
 
 [package.optional-dependencies]
 dev = [
+    { name = "grpcio-tools" },
     { name = "pytest" },
 ]
 
@@ -794,8 +798,12 @@ dev = [
 requires-dist = [
     { name = "block-sparse-attn", git = "https://github.com/mit-han-lab/Block-Sparse-Attention?tag=v0.0.2.post1" },
     { name = "flashdreams", editable = "flashdreams" },
+    { name = "grpcio", specifier = ">=1.80" },
+    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.80" },
     { name = "mediapy", specifier = ">=1.1" },
     { name = "opencv-python", specifier = ">=4.8" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "protobuf", specifier = ">=6.31.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
 ]
 provides-extras = ["dev"]
