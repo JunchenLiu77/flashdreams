@@ -126,6 +126,10 @@ outputs/
 data_local/
 credentials/*.secret
 
+# Managed third-party native source checkouts. Populate with
+# integrations/omnidreams/omnidreams_singleview/tools/sync_thirdparty.py.
+integrations/omnidreams/omnidreams_singleview/3rdparty/
+
 CLAUDE.md
 AGENTS.md
 .cursor/
