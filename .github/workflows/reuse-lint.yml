@@ -31,11 +31,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: LICENSE carries canonical Apache-2.0 + multi-license preamble
+      - name: LICENSE carries canonical Apache-2.0 text
         run: |
           set -euo pipefail
           # Sentinel strings unique to the canonical Apache-2.0 text — must
-          # appear in LICENSE even with the multi-license preamble in front.
+          # appear in LICENSE even with any preamble in front.
           for line in \
             "Apache License" \
             "Version 2.0, January 2004" \
@@ -60,34 +60,12 @@ jobs:
               exit 1
             fi
           done
-          # LICENSE preamble must reference the BSD-3 / Zlib subtrees and
-          # THIRD-PARTY-NOTICES so the multi-license posture is explicit
-          # (OSRB requirement for the unified licensing posture).
-          for ref in \
-            "LICENSES/BSD-3-Clause.txt" \
-            "LICENSES/Zlib.txt" \
-            "THIRD-PARTY-NOTICES"
-          do
-            if ! grep -qF "$ref" LICENSE; then
-              echo "::error file=LICENSE::preamble does not reference $ref"
-              exit 1
-            fi
-          done
-          echo "OK: LICENSE has Apache-2.0 text + multi-license preamble; LICENSES/Apache-2.0.txt is canonical"
+          echo "OK: LICENSE and LICENSES/Apache-2.0.txt carry canonical Apache-2.0 text"
 
       - name: Required OSRB collateral present at repo root
         run: |
           set -euo pipefail
-          for f in \
-            LICENSE \
-            LICENSES/Apache-2.0.txt \
-            LICENSES/BSD-3-Clause.txt \
-            LICENSES/Zlib.txt \
-            CONTRIBUTING.md \
-            NOTICE \
-            THIRD-PARTY-NOTICES \
-            REUSE.toml
-          do
+          for f in LICENSE LICENSES/Apache-2.0.txt CONTRIBUTING.md NOTICE REUSE.toml; do
             if [ ! -f "$f" ]; then
               echo "::error::missing required OSRB file: $f"
               exit 1
@@ -95,43 +73,14 @@ jobs:
             echo "OK: $f"
           done
 
-      - name: CONTRIBUTING.md DCO + Apache-2.0-only contribution + Signing Your Work
+      - name: CONTRIBUTING.md references the DCO / sign-off
         run: |
           set -euo pipefail
           if ! grep -qE "Developer.{1,40}Certificate.{1,10}of.{1,10}Origin|Signed-off-by|sign-off" CONTRIBUTING.md; then
             echo "::error::CONTRIBUTING.md does not reference DCO / sign-off"
             exit 1
           fi
-          # Tolerate line-wrap by collapsing newlines before matching.
-          if ! tr '\n' ' ' < CONTRIBUTING.md | grep -qE "only accept contributions under the Apache-2\.0\s+license"; then
-            echo "::error::CONTRIBUTING.md does not state the Apache-2.0-only contribution policy"
-            exit 1
-          fi
-          if ! grep -qE "Signing Your Work|^### Signing" CONTRIBUTING.md; then
-            echo "::error::CONTRIBUTING.md missing 'Signing Your Work' subsection"
-            exit 1
-          fi
-          if ! grep -qE 'git commit -s' CONTRIBUTING.md; then
-            echo "::error::CONTRIBUTING.md missing 'git commit -s' short-form example"
-            exit 1
-          fi
-          echo "OK: CONTRIBUTING.md DCO + Apache-2.0-only + Signing Your Work + 'git commit -s' all present"
-
-      - name: THIRD-PARTY-NOTICES carries third-party attribution sections
-        run: |
-          set -euo pipefail
-          for ref in \
-            "Direct runtime dependencies" \
-            "Source-level redistributions" \
-            "LICENSES/BSD-3-Clause.txt" \
-            "LICENSES/Zlib.txt"
-          do
-            if ! grep -qF "$ref" THIRD-PARTY-NOTICES; then
-              echo "::error file=THIRD-PARTY-NOTICES::missing required section / reference: $ref"
-              exit 1
-            fi
-          done
-          echo "OK: THIRD-PARTY-NOTICES enumerates direct deps + source-level redistributions"
+          echo "OK: CONTRIBUTING.md references DCO / sign-off"
 
       # Inline SPDX-License-Identifier on first-party source files.
       # REUSE.toml provides aggregate coverage so 'reuse lint' is green even

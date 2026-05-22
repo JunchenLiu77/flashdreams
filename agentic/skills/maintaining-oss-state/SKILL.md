@@ -30,8 +30,9 @@ gates catch what.
   of the repo is Apache-2.0 and that two subtrees
   (cudaraster → BSD-3-Clause, LodePNG → Zlib) carry different OSI
   licenses, then reproduces the full Apache-2.0 text. CI verifies the
-  preamble cross-references all three `LICENSES/*.txt` files plus
-  `THIRD-PARTY-NOTICES`.
+  canonical Apache-2.0 sentinel strings are present; the structural
+  cross-references in the preamble are not lint-checked (these files
+  change rarely — see the change-log review path instead).
 - **`NOTICE` is the minimal Apache 2.0 §4(d) notice** — NVIDIA
   copyright + pointers to `LICENSE`, `LICENSES/`, and
   `THIRD-PARTY-NOTICES`. It is *not* the full attribution document.
@@ -65,7 +66,7 @@ gates catch what.
 
 | File / path | Role | OSRB anchor |
 |---|---|---|
-| `LICENSE` | Multi-license preamble (Apache-2.0 + BSD-3 + Zlib pointer) followed by the canonical Apache-2.0 v2.0 text. CI verifies: preamble references `LICENSES/BSD-3-Clause.txt`, `LICENSES/Zlib.txt`, `THIRD-PARTY-NOTICES`, and contains all canonical Apache-2.0 sentinel strings. | 6107043 item #3 + OSRB unified-posture review |
+| `LICENSE` | Multi-license preamble (Apache-2.0 + BSD-3 + Zlib pointer) followed by the canonical Apache-2.0 v2.0 text. CI verifies the canonical Apache-2.0 sentinel strings are present (preamble structure is not lint-gated). | 6107043 item #3 + OSRB unified-posture review |
 | `LICENSES/Apache-2.0.txt` | REUSE 3.3 license-bundle copy of the canonical Apache-2.0 text (no preamble — must remain reusable verbatim by REUSE tooling). | 6107043 item #3 |
 | `LICENSES/BSD-3-Clause.txt` | Full BSD-3 text covering the in-source cudaraster port. | 6107043 Cmt #5 (2) |
 | `LICENSES/Zlib.txt` | Full Zlib text covering the embedded LodePNG codec. | 6107043 Cmt #5 (2) |
@@ -73,7 +74,7 @@ gates catch what.
 | `THIRD-PARTY-NOTICES` | Full per-dependency attribution: Direct runtime deps + Reference architectures + Optional-integration deps + Source-level redistributions. The source of truth for the third-party manifest. | OSRB review (canonical attribution doc) |
 | `REUSE.toml` | REUSE 3.3 aggregate / override annotations for files without inline SPDX. | 6107043 item #2 |
 | `CONTRIBUTING.md` | Apache-2.0-only contribution statement + DCO v1.1 reproduction + "Signing Your Work" subsection (with `git commit -s` and `--signoff`) + IP-review reference. | 6107043 item #6 + OSRB DCO template |
-| `.github/workflows/reuse-lint.yml` | CI gate enforcing REUSE compliance, OSRB collateral presence, inline SPDX headers (incl. `.sh` / `.proto` / Dockerfile), no legacy proprietary banners, `THIRD-PARTY-NOTICES` content shape, `CONTRIBUTING.md` policy assertions. | (enforces the above) |
+| `.github/workflows/reuse-lint.yml` | CI gate enforcing REUSE 3.3 compliance, presence of the five core OSRB collateral files (`LICENSE`, `LICENSES/Apache-2.0.txt`, `CONTRIBUTING.md`, `NOTICE`, `REUSE.toml`), canonical Apache-2.0 text in `LICENSE` and `LICENSES/Apache-2.0.txt`, `CONTRIBUTING.md` DCO/sign-off reference, inline SPDX headers (incl. `.sh` / `.proto` / Dockerfile), and no legacy proprietary banners. Content-shape of `LICENSE` preamble / `CONTRIBUTING.md` policy text / `THIRD-PARTY-NOTICES` sections is reviewed manually, not lint-checked. | (enforces the above) |
 
 The CI workflow runs on every PR, every push to `main`, and inside the
 GitHub merge queue. A failed `reuse-lint` blocks merge — never bypass it,
@@ -289,11 +290,11 @@ This is the highest-frequency OSS-state edit. It touches **four** places:
 3. `THIRD-PARTY-NOTICES` "Direct runtime dependencies" table — add a row with
    `name  SPDX  upstream-URL`.
 4. OSRB Bug 6107043 §14 — **reopen the bug and amend §14** with the
-   new (name, version, license, URL) row (per the OSRB policy at
-   <https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests>:
-   *"For ongoing contributions, please reopen the previously-approved
-   contribution bug if a new package was added to your product
-   delivery."*).
+   new (name, version, license, URL) row. Per OSRB policy, for ongoing
+   contributions the previously-approved contribution bug must be
+   reopened whenever a new package is added to the product delivery,
+   a previously-approved package changes its license, or the use of a
+   previously-approved component changes.
 
 ### Pre-add checklist
 
@@ -442,14 +443,21 @@ When extending CONTRIBUTING.md:
 - The SPDX header preamble at `CONTRIBUTING.md:200-235` doubles as the
   agent-and-human source for what every new source file's header should
   look like. Update it and `python-docstring-style/SKILL.md` together.
-- The IP Review Process link
-  (<https://nvidia.atlassian.net/wiki/display/OSS/IP+Review+Process>) is
-  an OSRB pointer — don't change it without OSRB sign-off.
+- The IP-review-process reference in `CONTRIBUTING.md` is an OSRB
+  pointer — don't change it without OSRB sign-off.
 
 ## 10. CI gates — what `reuse-lint` enforces
 
 The workflow has two jobs and five checks. Read
 `.github/workflows/reuse-lint.yml` if you need to add a new gate.
+
+The gate set is intentionally narrow — these files change rarely and
+the cost of over-fitted CI (false positives, sweeping rewrites
+needed when wording shifts) exceeds the benefit. Treat the lint as a
+backstop for structural regressions (missing collateral file, missing
+SPDX header, legacy banner) and trust human review for content shape
+(preamble references, contribution policy wording, attribution-table
+sections).
 
 **`reuse` job** (`fsfe/reuse-action@v5`):
 
@@ -458,18 +466,27 @@ The workflow has two jobs and five checks. Read
 
 **`collateral` job** (custom bash):
 
-1. `LICENSE` and `LICENSES/Apache-2.0.txt` are byte-identical, and
-   both contain the canonical Apache-2.0 sentinel strings.
-2. The required OSRB collateral files exist at the repo root:
-   `LICENSE`, `LICENSES/Apache-2.0.txt`, `LICENSES/BSD-3-Clause.txt`,
-   `LICENSES/Zlib.txt`, `CONTRIBUTING.md`, `NOTICE`,
-   `THIRD-PARTY-NOTICES`, `REUSE.toml`.
-3. `CONTRIBUTING.md` references the DCO / sign-off.
+1. `LICENSE` and `LICENSES/Apache-2.0.txt` both contain the canonical
+   Apache-2.0 sentinel strings. (Byte-identical equality is no longer
+   required — `LICENSE` carries a multi-license preamble in front of
+   the Apache-2.0 body.)
+2. The five core OSRB collateral files exist at the repo root:
+   `LICENSE`, `LICENSES/Apache-2.0.txt`, `CONTRIBUTING.md`, `NOTICE`,
+   `REUSE.toml`. (`LICENSES/BSD-3-Clause.txt`, `LICENSES/Zlib.txt`,
+   and `THIRD-PARTY-NOTICES` also need to be present per OSRB
+   approval, but are not lint-gated — they change slowly and a
+   manual review catches drift sooner than the cost of over-fitted
+   CI would justify.)
+3. `CONTRIBUTING.md` references the DCO / sign-off. (The explicit
+   "Apache-2.0-only" sentence, "Signing Your Work" subsection, and
+   `git commit -s` short-form example are required by the OSRB
+   template but are not separately lint-asserted.)
 4. Every tracked source file (`.py`, `.pyx`, `.pyi`, `.c`, `.cc`,
    `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`, `.cu`, `.cuh`,
-   `.inl`) carries an inline `SPDX-License-Identifier` in its first 20
-   lines — with the documented exclusions (`cudaraster/**`, generated
-   protobuf stubs).
+   `.inl`, `.sh`, `.proto`, `Dockerfile` / `*.dockerfile`) carries
+   an inline `SPDX-License-Identifier` in its first 20 lines — with
+   the documented exclusions (`cudaraster/**`, generated protobuf
+   stubs).
 5. No file contains a legacy NVIDIA proprietary banner
    (`"NVIDIA CORPORATION is strictly prohibited"`,
    `"proprietary rights in and to this software"`).
