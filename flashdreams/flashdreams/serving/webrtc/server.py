@@ -31,6 +31,7 @@ def create_webrtc_app(
     *,
     web_dir: Path,
     session_manager: WebRTCSessionManager,
+    request_session_url: str,
     index_filename: str = "request_session.html",
     preload_name: str = "WebRTC",
 ) -> web.Application:
@@ -89,6 +90,7 @@ def create_webrtc_app(
         logger.info("Preloading {} runtime on startup.", preload_name)
         await manager.preload_runtime()
         logger.info("{} runtime preload complete.", preload_name)
+        print(f"Connect via {request_session_url}")
 
     async def on_shutdown(app: web.Application) -> None:
         manager = app[SESSION_MANAGER_KEY]

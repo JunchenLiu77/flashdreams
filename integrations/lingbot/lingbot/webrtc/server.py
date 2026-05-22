@@ -33,7 +33,7 @@ from flashdreams.core.distributed import (
     init as distributed_init,
 )
 from flashdreams.serving.network import get_external_ip
-from flashdreams.serving.webrtc.server import create_webrtc_app
+from flashdreams.serving.webrtc.server import WebRTCSessionManager, create_webrtc_app
 from lingbot.webrtc.session import (
     LingbotRuntimeConfig,
     LingbotWebRTCSessionManager,
@@ -91,13 +91,15 @@ def parse_args() -> argparse.Namespace:
 
 def create_app(
     *,
-    session_manager: LingbotWebRTCSessionManager | None = None,
+    request_session_url: str,
+    session_manager: WebRTCSessionManager | None = None,
 ) -> web.Application:
     manager = session_manager or LingbotWebRTCSessionManager()
     return create_webrtc_app(
         web_dir=WEB_DIR,
         session_manager=manager,
         preload_name="Lingbot",
+        request_session_url=request_session_url,
     )
 
 
@@ -181,8 +183,12 @@ def main() -> None:
     )
     session_manager = LingbotWebRTCSessionManager(runtime_config=runtime_config)
     if world_rank == 0:
-        app = create_app(session_manager=session_manager)
-        logger.info("Starting on external IP: {}", get_external_ip())
+        external_ip = get_external_ip()
+        app = create_app(
+            session_manager=session_manager,
+            request_session_url=f"http://{external_ip}:{args.port}/request_session",
+        )
+        logger.info("Starting on external IP: {}", external_ip)
         try:
             web.run_app(app, host=args.host, port=args.port)
         finally:

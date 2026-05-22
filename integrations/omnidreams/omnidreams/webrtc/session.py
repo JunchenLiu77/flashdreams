@@ -7,13 +7,15 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import tempfile
 import time
+import zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import IntEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, TypeVar
 
 import cv2
@@ -21,6 +23,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+from filelock import FileLock
 from loguru import logger
 from omnidreams.conditioning.conditioning_wrapper import (
     AV_POSITIVE_PROMPT,
@@ -32,6 +35,7 @@ from omnidreams.conditioning.renderer import load_and_attach_ludus_scene
 from omnidreams.conditioning.world_scenario.data_loaders import load_scene
 from omnidreams.conditioning.world_scenario.settings import SETTINGS
 from omnidreams.config import OMNIDREAMS_CONFIGS
+from omnidreams.hf import omni_dreams_hf_repo, omni_dreams_hf_url
 from omnidreams.transformer import CosmosTransformerConfig
 
 from flashdreams.core.distributed.rank_orchestration import (
@@ -51,10 +55,180 @@ from flashdreams.serving.webrtc.warmup import (
     wait_for_ice_gathering_complete,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 _T = TypeVar("_T")
 DEFAULT_CLIENT_LIVENESS_TIMEOUT_S = 10.0
 _CLIENT_LIVENESS_CHECK_INTERVAL_S = 1.0
+DEFAULT_WEBRTC_SCENE_UUID = "065dcac9-ee67-4434-a835-c6b816c88e48"
+WEBRTC_SCENES_HF_REPO = omni_dreams_hf_repo("omni-dreams-scenes")
+WEBRTC_SCENES_HF_BROWSER_URL = omni_dreams_hf_url(
+    "omni-dreams-scenes",
+    "tree/main/scenes",
+    repo_type="dataset",
+)
+WEBRTC_SCENE_IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
+FLASHDREAMS_CACHE_DIR = Path(
+    os.path.expanduser(os.getenv("FLASHDREAMS_CACHE_DIR", "~/.cache/flashdreams"))
+)
+
+
+def _choose_existing_asset(
+    directory: Path,
+    *,
+    exact_name: str | None = None,
+    fallback_stems: tuple[str, ...] = (),
+    fallback_prefixes: tuple[str, ...] = (),
+    allowed_suffixes: set[str] | None = None,
+    preferred_stems: tuple[str, ...] = (),
+) -> Path | None:
+    if not directory.is_dir():
+        return None
+
+    if exact_name is not None:
+        exact_path = directory / exact_name
+        if exact_path.is_file() and (
+            allowed_suffixes is None or exact_path.suffix.lower() in allowed_suffixes
+        ):
+            return exact_path
+
+    candidates = []
+    for path in directory.iterdir():
+        if not path.is_file():
+            continue
+        if allowed_suffixes is not None and path.suffix.lower() not in allowed_suffixes:
+            continue
+        if path.stem in fallback_stems or any(
+            path.stem.startswith(f"{prefix}-") for prefix in fallback_prefixes
+        ):
+            candidates.append(path)
+
+    if not candidates:
+        return None
+
+    preferred_order = {stem: index for index, stem in enumerate(preferred_stems)}
+    return sorted(
+        candidates,
+        key=lambda path: (
+            preferred_order.get(path.stem, len(preferred_order)),
+            path.name,
+        ),
+    )[0]
+
+
+def _resolve_webrtc_scene_assets(
+    scene_dir: Path,
+    *,
+    prompt_filename: str,
+    clipgt_dirname: str,
+) -> tuple[Path, Path, Path]:
+    missing_assets = []
+    clipgt_dir = scene_dir / clipgt_dirname
+    if not clipgt_dir.is_dir():
+        missing_assets.append(str(scene_dir / clipgt_dirname))
+        clipgt_dir = None
+
+    first_frame_path = (
+        None
+        if clipgt_dir is None
+        else _choose_existing_asset(
+            clipgt_dir,
+            fallback_stems=("first_image",),
+            allowed_suffixes=WEBRTC_SCENE_IMAGE_SUFFIXES,
+            preferred_stems=("first_image",),
+        )
+    )
+    if first_frame_path is None:
+        missing_assets.append(f"first_image.* under {clipgt_dirname}/")
+
+    prompt_path = (
+        None
+        if clipgt_dir is None
+        else _choose_existing_asset(
+            clipgt_dir,
+            exact_name=prompt_filename,
+            allowed_suffixes={".txt"},
+        )
+    )
+    if prompt_path is None:
+        missing_assets.append(f"{prompt_filename} under {clipgt_dirname}/")
+
+    if missing_assets:
+        raise FileNotFoundError(
+            "Missing Omnidreams WebRTC scene assets: " + ", ".join(missing_assets)
+        )
+
+    assert clipgt_dir is not None
+    assert first_frame_path is not None
+    assert prompt_path is not None
+    return clipgt_dir, first_frame_path, prompt_path
+
+
+def _safe_extract_zip(source: Path, destination: Path) -> None:
+    if destination.exists():
+        if destination.is_file() or destination.is_symlink():
+            destination.unlink()
+        else:
+            shutil.rmtree(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    destination_root = destination.resolve()
+    with zipfile.ZipFile(source) as zf:
+        for member in zf.infolist():
+            member_path = PurePosixPath(member.filename)
+            if (
+                member_path.is_absolute()
+                or not member_path.parts
+                or any(part in {"", ".", ".."} for part in member_path.parts)
+            ):
+                raise ValueError(
+                    f"Unsafe archive member in {source}: {member.filename}"
+                )
+            target = destination / Path(*member_path.parts)
+            target_resolved = target.resolve()
+            if destination_root != target_resolved and destination_root not in (
+                target_resolved.parents
+            ):
+                raise ValueError(
+                    f"Archive member escapes destination: {member.filename}"
+                )
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+
+def _ensure_hf_webrtc_scene_synced(
+    scene_uuid: str,
+    *,
+    prompt_filename: str = "prompt.txt",
+    clipgt_dirname: str = "clipgt",
+) -> Path:
+    """Stage an HF scene into the local layout expected by WebRTC."""
+    from huggingface_hub import hf_hub_download  # noqa: PLC0415
+
+    scene_uuid = scene_uuid.strip()
+    assert scene_uuid, "scene_uuid must be set."
+    cache_root = FLASHDREAMS_CACHE_DIR / "omnidreams-scenes"
+    scene_dir = cache_root / scene_uuid
+    lock_path = cache_root / ".locks" / f"{scene_uuid}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with FileLock(str(lock_path)):
+        archive_path = Path(
+            hf_hub_download(
+                repo_id=WEBRTC_SCENES_HF_REPO,
+                repo_type="dataset",
+                filename=f"scenes/clipgt-{scene_uuid}.usdz",
+            )
+        )
+        _safe_extract_zip(archive_path, scene_dir / clipgt_dirname)
+
+    logger.info(
+        "Synced Omnidreams WebRTC scene {} from Hugging Face to {}",
+        scene_uuid,
+        scene_dir,
+    )
+    return scene_dir
 
 
 def _summarize_sdp_candidates(sdp: str) -> str:
@@ -108,20 +282,14 @@ class OmnidreamsRuntimeConfig:
     pipeline_config_name: str = (
         "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf"
     )
-    scene_dir: Path = (
-        REPO_ROOT
-        / "assets"
-        / "example_data"
-        / "omnidreams-webrtc"
-        / "0d404ff7-2b66-498c-b047-1ed8cded60d4"
-    )
+    scene_dir: Path | None = None
+    scene_uuid: str | None = None
     seed: int | None = 42
     device: str = "cuda:0"
     video_height: int = 704
     video_width: int = 1280
     fps: int = 30
     camera_name: str = "camera_front_wide_120fov"
-    first_frame_filename: str = "first_frame.jpeg"
     prompt_filename: str = "prompt.txt"
     clipgt_dirname: str = "clipgt"
     move_speed_per_s: float = 6.0
@@ -316,29 +484,25 @@ class OmnidreamsInferenceRuntime:
 
         init_t0 = time.perf_counter()
         cfg = self.config
-        scene_dir = cfg.scene_dir
-        clipgt_dir = scene_dir / cfg.clipgt_dirname
-        first_frame_path = scene_dir / cfg.first_frame_filename
-        prompt_path = scene_dir / cfg.prompt_filename
-        logger.info(
-            "Initializing Omnidreams runtime: config={} scene_dir={} device={} "
-            "camera={} resolution={}x{}",
-            cfg.pipeline_config_name,
-            scene_dir,
-            cfg.device,
-            cfg.camera_name,
-            cfg.video_width,
-            cfg.video_height,
-        )
-        missing_paths = [
-            str(path)
-            for path in (clipgt_dir, first_frame_path, prompt_path)
-            if not path.exists()
-        ]
-        if missing_paths:
-            raise FileNotFoundError(
-                "Missing Omnidreams WebRTC scene assets: " + ", ".join(missing_paths)
+        if cfg.scene_dir is None:
+            scene_uuid = cfg.scene_uuid or DEFAULT_WEBRTC_SCENE_UUID
+            scene_dir = _ensure_hf_webrtc_scene_synced(
+                scene_uuid,
+                prompt_filename=cfg.prompt_filename,
+                clipgt_dirname=cfg.clipgt_dirname,
             )
+        else:
+            assert cfg.scene_uuid is None, (
+                "scene_uuid must be None when scene_dir is set"
+            )
+            scene_dir = cfg.scene_dir
+
+        cfg.scene_dir = scene_dir
+        clipgt_dir, first_frame_path, prompt_path = _resolve_webrtc_scene_assets(
+            scene_dir,
+            prompt_filename=cfg.prompt_filename,
+            clipgt_dirname=cfg.clipgt_dirname,
+        )
         if cfg.pipeline_config_name not in OMNIDREAMS_CONFIGS:
             supported = ", ".join(sorted(OMNIDREAMS_CONFIGS))
             raise ValueError(
