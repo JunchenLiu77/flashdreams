@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         / "assets"
         / "example_data"
         / "omnidreams-webrtc"
-        / "0d404ff7-2b66-498c-b047-1ed8cded60d4",
+        / "0b10bce8-61f1-4350-8577-cf3c9493ffc3",
     )
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--seed", type=int, default=42)

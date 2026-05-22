@@ -8,6 +8,7 @@ import contextlib
 import json
 import os
 import tempfile
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -313,11 +314,22 @@ class OmnidreamsInferenceRuntime:
         if self._wrapper is not None:
             return
 
+        init_t0 = time.perf_counter()
         cfg = self.config
         scene_dir = cfg.scene_dir
         clipgt_dir = scene_dir / cfg.clipgt_dirname
         first_frame_path = scene_dir / cfg.first_frame_filename
         prompt_path = scene_dir / cfg.prompt_filename
+        logger.info(
+            "Initializing Omnidreams runtime: config={} scene_dir={} device={} "
+            "camera={} resolution={}x{}",
+            cfg.pipeline_config_name,
+            scene_dir,
+            cfg.device,
+            cfg.camera_name,
+            cfg.video_width,
+            cfg.video_height,
+        )
         missing_paths = [
             str(path)
             for path in (clipgt_dir, first_frame_path, prompt_path)
@@ -350,6 +362,7 @@ class OmnidreamsInferenceRuntime:
         if self._device.type == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA is required for Omnidreams WebRTC runtime.")
 
+        logger.info("Loading Omnidreams first frame from {}", first_frame_path)
         image_bgr = cv2.imread(str(first_frame_path), cv2.IMREAD_COLOR)
         if image_bgr is None:
             raise RuntimeError(f"Failed to read first frame from {first_frame_path}")
@@ -372,6 +385,8 @@ class OmnidreamsInferenceRuntime:
         self._text_prompts = [TextPrompt(positive=prompt)]
 
         loadable_clipgt_dir = self._prepare_clipgt_dir(clipgt_dir)
+        logger.info("Loading Omnidreams scene data from {}", loadable_clipgt_dir)
+        scene_t0 = time.perf_counter()
         scene_data = load_scene(
             loadable_clipgt_dir,
             camera_names=[cfg.camera_name],
@@ -379,10 +394,19 @@ class OmnidreamsInferenceRuntime:
             input_pose_fps=SETTINGS["INPUT_POSE_FPS"],
             resize_resolution_hw=(cfg.video_height, cfg.video_width),
         )
+        logger.info(
+            "Loaded Omnidreams scene data in {:.1f}s; attaching Ludus scene.",
+            time.perf_counter() - scene_t0,
+        )
+        ludus_t0 = time.perf_counter()
         scene_data = load_and_attach_ludus_scene(
             loadable_clipgt_dir,
             scene_data,
             device=self._device,
+        )
+        logger.info(
+            "Attached Omnidreams Ludus scene in {:.1f}s.",
+            time.perf_counter() - ludus_t0,
         )
         if not scene_data.ego_poses:
             raise ValueError(f"Scene {loadable_clipgt_dir} has no ego poses.")
@@ -395,14 +419,31 @@ class OmnidreamsInferenceRuntime:
                 f"Camera {cfg.camera_name!r} has no extrinsics in {loadable_clipgt_dir}."
             )
 
+        logger.info(
+            "Setting up Omnidreams pipeline {} on {}. This may load checkpoints, "
+            "compile modules, and initialize CUDA graphs.",
+            cfg.pipeline_config_name,
+            self._device,
+        )
+        pipeline_t0 = time.perf_counter()
         self._wrapper = OmnidreamsConditioningWrapper(
             pipeline_config_name=cfg.pipeline_config_name,
             resolution_wh=(cfg.video_width, cfg.video_height),
             seed_for_every_rollout=cfg.seed,
             device=self._device,
         )
+        logger.info(
+            "Omnidreams pipeline setup complete in {:.1f}s.",
+            time.perf_counter() - pipeline_t0,
+        )
         self._scene_data = scene_data
+        logger.info("Creating Omnidreams renderer for camera {}", cfg.camera_name)
+        renderer_t0 = time.perf_counter()
         self._renderer = self._wrapper.create_renderer(scene_data, [cfg.camera_name])
+        logger.info(
+            "Omnidreams renderer ready in {:.1f}s.",
+            time.perf_counter() - renderer_t0,
+        )
         self._camera_to_rig = torch.as_tensor(
             scene_data.camera_extrinsics[cfg.camera_name],
             device=self._device,
@@ -411,6 +452,10 @@ class OmnidreamsInferenceRuntime:
         self._initial_ego_pose = scene_data.ego_poses[0].transformation_matrix
         self._next_timestamp_us = int(scene_data.ego_poses[0].timestamp)
         self._reset_rollout_sync()
+        logger.info(
+            "Omnidreams runtime initialization complete in {:.1f}s.",
+            time.perf_counter() - init_t0,
+        )
 
     def _prepare_clipgt_dir(self, clipgt_dir: Path) -> Path:
         if list(clipgt_dir.glob("*.calibration_estimate.parquet")):
@@ -632,13 +677,29 @@ class OmnidreamsWebRTCSessionManager:
     async def preload_runtime(self) -> None:
         async with self._preload_lock:
             if not self._runtime_ready:
+                logger.info("Omnidreams runtime preload: initializing model runtime.")
+                preload_t0 = time.perf_counter()
                 await self._runtime.initialize()
                 self._runtime_ready = True
+                logger.info(
+                    "Omnidreams runtime preload: model runtime ready in {:.1f}s.",
+                    time.perf_counter() - preload_t0,
+                )
             if not self._warmup_complete:
+                logger.info(
+                    "Omnidreams runtime preload: starting loopback warmup with {} "
+                    "chunk(s).",
+                    self.runtime_config.warmup_chunks,
+                )
+                warmup_t0 = time.perf_counter()
                 await self._run_loopback_warmup_session(
                     num_chunks=self.runtime_config.warmup_chunks
                 )
                 self._warmup_complete = True
+                logger.info(
+                    "Omnidreams runtime preload: warmup complete in {:.1f}s.",
+                    time.perf_counter() - warmup_t0,
+                )
 
     async def create_answer(self, *, offer_sdp: str, offer_type: str) -> dict[str, str]:
         if not self._runtime_ready or not self._warmup_complete:
