@@ -5,7 +5,22 @@
       "name": "cutlass",
       "repo": "https://github.com/NVIDIA/cutlass.git",
       "commit": "f3fde58372d33e9a5650ba7b80fc48b3b49d40c8",
-      "directory": "cutlass"
+      "directory": "cutlass",
+      "delete_paths": [
+        "python/CuTeDSL"
+      ],
+      "patches": [
+        {
+          "path": "patches/cutlass/sm120-tma-pool.patch",
+          "strip": 1
+        }
+      ],
+      "overlays": [
+        {
+          "source": "patches/cutlass/include",
+          "destination": "include"
+        }
+      ]
     },
     {
       "name": "SageAttention",
