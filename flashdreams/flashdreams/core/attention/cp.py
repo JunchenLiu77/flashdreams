@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Ring (sequence-parallel) attention built on the native SDPA primitive."""
+"""Context-parallel attention (ring / ulysses) built on native SDPA primitives."""
 
 from contextlib import nullcontext
 from typing import Any, Callable, ContextManager, Literal, cast
@@ -39,17 +39,7 @@ _sdpa_flash: Callable[..., tuple[Any, ...]] = cast(
 def torch_sdpa_cudnn(
     query: Tensor, key: Tensor, value: Tensor, return_lse: bool = False
 ) -> tuple[Tensor, Tensor | None]:
-    """Scaled dot-product attention via CuDNN backend (supports LSE for ring merge).
-
-    Args:
-        query: Query tensor, shape ``[B, H, S, D]``.
-        key: Key tensor, shape ``[B, H, S, D]``.
-        value: Value tensor, shape ``[B, H, S, D]``.
-        return_lse: If True, return (output, log_sum_exp) for ring merge.
-
-    Returns:
-        Attention output, or ``(output, lse)`` when ``return_lse=True``.
-    """
+    """Scaled dot-product attention via CuDNN backend."""
     out, lse, *_ = _sdpa_cudnn(
         query,
         key,
@@ -63,61 +53,48 @@ def torch_sdpa_cudnn(
 def torch_sdpa_flash(
     query: Tensor, key: Tensor, value: Tensor, return_lse: bool = False
 ) -> tuple[Tensor, Tensor | None]:
-    """Scaled dot-product attention via Flash Attention backend (returns LSE for ring merge).
-
-    Args:
-        query: Query tensor, shape ``[B, H, S, D]``.
-        key: Key tensor, shape ``[B, H, S, D]``.
-        value: Value tensor, shape ``[B, H, S, D]``.
-        return_lse: If True, return (output, log_sum_exp) for ring merge.
-
-    Returns:
-        Attention output, or ``(output, lse)`` when ``return_lse=True``.
-    """
+    """Scaled dot-product attention via Flash Attention backend."""
     out, lse, *_ = _sdpa_flash(query, key, value)
     return out, (lse if return_lse else None)
 
 
-class RingAttention(NativeAttention):
-    """Context-parallel ring attention module with configurable QKV layout and SDPA backend."""
+class ContextParallelAttention(NativeAttention):
+    """Context-parallel attention with selectable method and SDPA backend."""
 
     def __init__(
         self,
         qkv_format: Literal["bhsd", "bshd"] = "bhsd",
         backend: Literal["cudnn", "flash"] = "cudnn",
+        method: Literal["ring", "ulysses"] = "ring",
         convert_to_fp32: bool = True,
     ) -> None:
-        """Configure ring attention format and backend.
-
-        Args:
-            qkv_format: Layout of the QKV tensors; ``"bhsd"`` is ``(B, H, S, D)``,
-                ``"bshd"`` is ``(B, S, H, D)``.
-            backend: Local SDPA backend used inside the ring step.
-            convert_to_fp32: Promote partial outputs to ``float32`` for the
-                cross-rank log-sum-exp merge.
-        """
         super().__init__()
         assert qkv_format in ["bhsd", "bshd"], f"Invalid qkv format: {qkv_format}"
         assert backend in ["cudnn", "flash"], f"Invalid backend: {backend}"
+        assert method in ["ring", "ulysses"], f"Invalid cp method: {method}"
         self.qkv_format = qkv_format
         self.backend = backend
+        self.method = method
         self.device_mesh: DeviceMesh | None = None
         self.convert_to_fp32 = convert_to_fp32
 
+    @staticmethod
+    def _wait_collective(tensor: Tensor) -> Tensor:
+        """Wait for functional collective outputs when needed."""
+        wait_fn = getattr(tensor, "wait", None)
+        if callable(wait_fn):
+            return cast(Tensor, wait_fn())
+        return tensor
+
     def _impl(self, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
-        """Ring attention: all-gather KV across CP ranks, run local SDPA, merge with LSE.
+        if self.method == "ring":
+            return self._impl_ring(query, key, value)
+        if self.method == "ulysses":
+            return self._impl_ulysses(query, key, value)
+        raise ValueError(f"Unsupported context parallel method: {self.method}")
 
-        Q is replicated per rank; K/V are sharded. Each rank runs SDPA over gathered KV
-        and merges partial outputs using log-sum-exp. Expects q,k,v in ``[B, H, S, D]``.
-
-        Args:
-            query: Query tensor, shape ``[B, H, S, D]`` (CP-shared).
-            key: Key tensor, shape ``[B, H, S, D]`` (CP-sharded).
-            value: Value tensor, shape ``[B, H, S, D]`` (CP-sharded).
-
-        Returns:
-            Attention output tensor.
-        """
+    def _impl_ring(self, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+        """Ring attention: all-gather KV across CP ranks and LSE-merge outputs."""
         attn_op = {
             "cudnn": torch_sdpa_cudnn,
             "flash": torch_sdpa_flash,
@@ -172,4 +149,62 @@ class RingAttention(NativeAttention):
             prev_lse = lse
 
         out = out.to(query.dtype)
+        return out
+
+    def _impl_ulysses(self, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+        """Ulysses attention: all-to-all QKV, local SDPA, all-to-all output restore."""
+        attn_op = {
+            "cudnn": torch_sdpa_cudnn,
+            "flash": torch_sdpa_flash,
+        }[self.backend]
+
+        if self.device_mesh is None:
+            return attn_op(query, key, value, return_lse=False)[0]
+
+        world_size = self.device_mesh.size()
+        if world_size == 1:
+            return attn_op(query, key, value, return_lse=False)[0]
+
+        B, H, Sq_local, D = query.shape
+        _, _, Sk_local, _ = key.shape
+        if H % world_size != 0:
+            raise ValueError(
+                f"Number of heads ({H}) must be divisible by CP size ({world_size}) for Ulysses."
+            )
+        H_local = H // world_size
+        group = self.device_mesh.get_group()
+
+        query = (
+            query.reshape(B, world_size, H_local, Sq_local, D)
+            .permute(1, 3, 0, 2, 4)
+            .contiguous()
+        )
+        key = (
+            key.reshape(B, world_size, H_local, Sk_local, D)
+            .permute(1, 3, 0, 2, 4)
+            .contiguous()
+        )
+        value = (
+            value.reshape(B, world_size, H_local, Sk_local, D)
+            .permute(1, 3, 0, 2, 4)
+            .contiguous()
+        )
+        query, key, value = (
+            self._wait_collective(funcol.all_to_all_single(x, None, None, group=group))
+            for x in (query, key, value)
+        )
+        query, key, value = (
+            x.flatten(0, 1).permute(1, 2, 0, 3).contiguous()
+            for x in (query, key, value)
+        )
+
+        out, _ = attn_op(query, key, value, return_lse=True)
+
+        out = (
+            out.reshape(B, H_local, world_size, Sq_local, D)
+            .permute(2, 1, 0, 3, 4)
+            .contiguous()
+        )
+        out = self._wait_collective(funcol.all_to_all_single(out, None, None, group=group))
+        out = out.flatten(0, 1).permute(1, 0, 2, 3).contiguous()
         return out

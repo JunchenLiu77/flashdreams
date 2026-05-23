@@ -18,14 +18,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.distributed import ProcessGroup
 
+from flashdreams.core.attention import ContextParallelAttention
 from flashdreams.core.attention.kvcache import BlockKVCache
-from flashdreams.core.attention.ring import RingAttention
 from flashdreams.core.attention.rope import apply_rope_freqs
 from flashdreams.infra.config import InstantiateConfig
 
@@ -77,6 +78,8 @@ class TemplateDiTConfig(InstantiateConfig):
 
     ffn_mult: float = 2.0
     """Expansion factor applied to ``model_channels`` inside the FFN."""
+    cp_method: Literal["ring", "ulysses"] = "ring"
+    """Context-parallel attention method used by this network."""
 
     def __post_init__(self) -> None:
         assert self.model_channels % self.num_heads == 0, (
@@ -122,9 +125,12 @@ class TemplateDiT(nn.Module):
         self.q_proj = nn.Linear(D, D)
         self.k_proj = nn.Linear(D, D)
         self.v_proj = nn.Linear(D, D)
-        # ``bshd`` matches the native ``[B, S, H, d_h]`` layout;
-        # RingAttention handles the CP gather + LSE merge.
-        self.attn = RingAttention(qkv_format="bshd", backend="cudnn")
+        # ``bshd`` matches native ``[B, S, H, d_h]`` layout.
+        self.attn = ContextParallelAttention(
+            qkv_format="bshd",
+            backend="cudnn",
+            method=config.cp_method,
+        )
         self.attn_out = nn.Linear(D, D)
 
         self.norm2 = nn.LayerNorm(D)
@@ -138,7 +144,7 @@ class TemplateDiT(nn.Module):
         self.output_proj = nn.Linear(D, config.in_channels)
 
     def set_context_parallel_group(self, cp_group: ProcessGroup | None) -> None:
-        """Forward the CP group to :class:`RingAttention`.
+        """Forward the CP group to :class:`ContextParallelAttention`.
 
         Args:
             cp_group: Context-parallel group; ``None`` disables CP.
@@ -228,7 +234,7 @@ class TemplateDiT(nn.Module):
         """Run one pre-norm self-attention + FFN residual block.
 
         Q is this rank's current chunk; K/V come from ``kv_cache``
-        (filling or steady view). :class:`RingAttention` fuses the
+        (filling or steady view). :class:`ContextParallelAttention` fuses the
         cross-rank KV gather with the SDPA call.
         """
         B, L_local, D = x.shape

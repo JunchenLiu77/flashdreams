@@ -90,6 +90,7 @@ def _wan22_branch(checkpoint_path: str) -> Wan21TransformerConfig:
     return Wan21TransformerConfig(
         network=WanDiTNetwork14BConfig(
             patch_embedding_type="conv3d",
+            cp_method="ring",
         ),
         checkpoint_path=checkpoint_path,
         state_dict_transform=state_dict_transform,

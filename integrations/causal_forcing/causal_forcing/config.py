@@ -80,6 +80,7 @@ PIPELINE_WAN21_T2V_1PT3B_CHUNKWISE = WanInferencePipelineConfig(
         transformer=Wan21TransformerConfig(
             network=WanDiTNetwork1pt3BConfig(
                 patch_embedding_type="conv3d",
+                cp_method="ring",
             ),
             checkpoint_path=CHECKPOINT_PATH_CHUNKWISE,
             state_dict_transform=state_dict_transform,

@@ -70,6 +70,7 @@ PIPELINE_WAN21_T2V_1PT3B = WanInferencePipelineConfig(
         transformer=Wan21TransformerConfig(
             network=WanDiTNetwork1pt3BConfig(
                 patch_embedding_type="conv3d",
+                cp_method="ring",
             ),
             checkpoint_path=CHECKPOINT_PATH,
             state_dict_transform=state_dict_transform,

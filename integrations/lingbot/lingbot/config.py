@@ -57,6 +57,7 @@ PIPELINE_LINGBOT_WORLD_FAST = LingbotWorldInferencePipelineConfig(
             network=LingbotWorldDiTNetwork14BConfig(
                 patch_embedding_type="conv3d",
                 control_type="cam",
+                cp_method="ulysses",
                 # 16 noise channels + 4-channel mask + 16-channel image latent
                 # (channel-concat I2V layout). Must match the
                 # ``concat_image_mask_to_latent=True`` setting below.

@@ -45,7 +45,7 @@ PIPELINE_COSMOS2_T2V_2B_720P = CosmosInferencePipelineConfig(
     diffusion_model=DiffusionModelConfig(
         seed=42,
         transformer=CosmosTransformerConfig(
-            network=CosmosDiTNetworkConfig(),
+            network=CosmosDiTNetworkConfig(cp_method="ring"),
             checkpoint_path=CHECKPOINT_PATH_POST_TRAINED_2B,
             state_dict_transform=state_dict_transform,
             batch_shape=(),
@@ -80,7 +80,7 @@ PIPELINE_COSMOS2_I2V_2B_720P = CosmosInferencePipelineConfig(
     diffusion_model=DiffusionModelConfig(
         seed=42,
         transformer=CosmosTransformerConfig(
-            network=CosmosDiTNetworkConfig(),
+            network=CosmosDiTNetworkConfig(cp_method="ring"),
             checkpoint_path=CHECKPOINT_PATH_POST_TRAINED_2B,
             state_dict_transform=state_dict_transform,
             batch_shape=(),

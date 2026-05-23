@@ -51,7 +51,7 @@ PIPELINE_WAN21_T2V_1PT3B_480P = WanInferencePipelineConfig(
     diffusion_model=DiffusionModelConfig(
         seed=42,
         transformer=Wan21TransformerConfig(
-            network=WanDiTNetwork1pt3BConfig(),
+            network=WanDiTNetwork1pt3BConfig(cp_method="ring"),
             checkpoint_path=CHECKPOINT_PATH_T2V_1PT3B,
             batch_shape=(),
             len_t=21,
@@ -84,6 +84,7 @@ PIPELINE_WAN21_I2V_14B_480P = WanInferencePipelineConfig(
             network=WanDiTNetwork14BConfig(
                 cross_attn_enable_img=True,
                 in_dim=16 + 4 + 16,
+                cp_method="ring",
             ),
             checkpoint_path=CHECKPOINT_PATH_I2V_14B_480P,
             batch_shape=(),

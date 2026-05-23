@@ -114,6 +114,7 @@ SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE = OmnidreamsPipelineConfig(
                 # 16 channels: Wan-VAE HDMap branch.
                 additional_concat_ch=16,
                 enable_cross_view_attn=False,
+                cp_method="ring",
             ),
             checkpoint_path=AVAILABLE_OMNIDREAMS_CHECKPOINT_PATHS["1view-vae-chunk2"],
             batch_shape=(1,),
@@ -264,6 +265,7 @@ SV_35STEPS_CHUNK2_LOC24_COSMOS2_2B_RES720P_30FPS_HDMAP_VAE_MADS1M = OmnidreamsPi
             network=CosmosDiTNetworkConfig(
                 additional_concat_ch=16,
                 enable_cross_view_attn=False,
+                cp_method="ring",
             ),
             checkpoint_path=AVAILABLE_OMNIDREAMS_CHECKPOINT_PATHS[
                 "1view-diffusion-forcing-chunk2"

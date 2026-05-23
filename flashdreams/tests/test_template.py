@@ -194,10 +194,10 @@ def _run_rollout(
 
 ## Basic smoke tests
 
-# ``RingAttention`` dispatches to CUDA-only SDPA backends.
+# ``ContextParallelAttention`` dispatches to CUDA-only SDPA backends.
 _CUDA_REQUIRED = pytest.mark.skipif(
     not torch.cuda.is_available(),
-    reason="template recipe uses RingAttention which requires CUDA.",
+    reason="template recipe uses ContextParallelAttention which requires CUDA.",
 )
 
 _CI_GPU = pytest.mark.ci_gpu

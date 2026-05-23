@@ -33,7 +33,7 @@ Minimal end-to-end recipe exercising every contract in
 - **Context parallelism** along `L` — `cp_size` auto-detected from
   `torch.distributed.get_world_size()`, so `torchrun --nproc_per_node=N`
   is the single source of truth. Attention uses
-  `flashdreams.core.attention.RingAttention` (fuses the KV gather with
+`flashdreams.core.attention.ContextParallelAttention` (fuses the KV gather with
   SDPA via an LSE merge).
 - **Per-AR-step control input** — `TemplateControlEncoder` (a
   `StreamingEncoder`). Setting `encoder=None` exercises the no-control
