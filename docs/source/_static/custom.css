@@ -156,6 +156,12 @@ SPDX-License-Identifier: Apache-2.0
     margin: 16px 0 8px;
 }
 
+.benchmark-chart-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
 .benchmark-figure-wrap figcaption {
     text-align: left;
     margin-top: 0;

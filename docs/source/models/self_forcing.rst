@@ -88,25 +88,61 @@ To inspect all supported CLI arguments and their default values, run:
        self-forcing-wan2.1-t2v-1.3b \
        --help
 
+Some generated samples:
+
+.. raw:: html
+
+   <div class="model-video-grid">
+     <div class="model-video-card">
+       <!-- <div class="model-video-placeholder">Video placeholder</div> -->
+       <video class="model-video-player" autoplay muted loop playsinline preload="metadata">
+         <source src="https://research-staging.nvidia.com/labs/sil/projects/flashdreams/assets/self_forcing/self-forcing-wan2.1-t2v-1.3b-flash_1.mp4" type="video/mp4">
+         Your browser does not support the video tag.
+       </video>
+       <div class="model-video-overlay">
+         A close-up shot of a ceramic teacup slowly pouring water into a glass mug. The water flows smoothly from the spout of the teacup into the mug, creating gentle ripples as it fills up. Both cups have detailed textures, with the teacup having a matte finish and the glass mug showcasing clear transparency. The background is a blurred kitchen countertop, adding context without distracting from the central action. The pouring motion is fluid and natural, emphasizing the interaction between the two cups.
+       </div>
+     </div>
+     <div class="model-video-card">
+       <!-- <div class="model-video-placeholder">Video placeholder</div> -->
+       <video class="model-video-player" autoplay muted loop playsinline preload="metadata">
+         <source src="https://research-staging.nvidia.com/labs/sil/projects/flashdreams/assets/self_forcing/self-forcing-wan2.1-t2v-1.3b-flash_6.mp4" type="video/mp4">
+         Your browser does not support the video tag.
+       </video>
+       <div class="model-video-overlay">
+         A dramatic and dynamic scene in the style of a disaster movie, depicting a powerful tsunami rushing through a narrow alley in Bulgaria. The water is turbulent and chaotic, with waves crashing violently against the walls and buildings on either side. The alley is lined with old, weathered houses, their facades partially submerged and splintered. The camera angle is low, capturing the full force of the tsunami as it surges forward, creating a sense of urgency and danger. People can be seen running frantically, adding to the chaos. The background features a distant horizon, hinting at the larger scale of the tsunami. A dynamic, sweeping shot from a low-angle perspective, emphasizing the movement and intensity of the event.
+       </div>
+     </div>
+   </div>
+
 
 Profiling Benchmark
 -------------------
 
-The chart below compares total DiT runtime for FlashDreams Self-Forcing against
+Here is the profiling benchmark on total DiT runtime for FlashDreams Self-Forcing compared to
 the `official Self-Forcing implementation <https://github.com/guandeh17/Self-Forcing>`_
 and the `FastVideo implementation <https://github.com/hao-ai-lab/FastVideo>`_
-under matched settings. Use it as a quick reference for expected speedup trends
-across hardware and runtime choices.
+under matched settings.
 
-.. figure:: /_static/perf/perf-0521-self-forcing.svg
-   :class: benchmark-figure
-   :figclass: benchmark-figure-wrap
-   :alt: Self-Forcing benchmark chart.
+.. raw:: html
 
-   This chart shows the DiT total runtime (4 denoising steps) at the 6th
-   autoregressive rollout on a single GPU.
-   For an apples-to-apples comparison, all implementations are forced to use cuDNN attention
-   backend and ``torch.compile`` for DiT network. For profiling the official implementation, see
-   `this instruction <https://github.com/NVIDIA/flashdreams/tree/main/integrations/self_forcing/tests/parity_check/README.md>`_.
-   For profiling the FastVideo implementation, see
-   `this instruction <https://github.com/NVIDIA/flashdreams/tree/main/integrations/self_forcing/tests/baseline_fastvideo/README.md>`_.
+   <figure class="benchmark-figure-wrap">
+     <div
+       id="self-forcing-benchmark-chart"
+       class="benchmark-figure"
+       data-benchmark-md-url="/_static/performance/self_forcing/perf-0521.md"
+       data-benchmark-series="fastvideo:FastVideo:#f59e0b;official:Official Impl:#3b82f6;flashdreams:FlashDreams:#76B900"
+       data-chart-aria-label="Self-Forcing benchmark chart"
+     ></div>
+     <figcaption>
+       <p>
+         This chart shows the DiT total runtime (4 denoising steps in milliseconds) at the 6th autoregressive rollout on a single GPU.
+         For an apples-to-apples comparison, all implementations are forced to use cuDNN attention backend and <code>torch.compile</code> for DiT network.
+         For profiling the official implementation, see
+         <a href="https://github.com/NVIDIA/flashdreams/tree/main/integrations/self_forcing/tests/parity_check/README.md">this instruction</a>.
+         For profiling the FastVideo implementation, see
+         <a href="https://github.com/NVIDIA/flashdreams/tree/main/integrations/self_forcing/tests/baseline_fastvideo/README.md">this instruction</a>.
+       </p>
+     </figcaption>
+   </figure>
+   <script src="/_static/js/benchmark_chart.js"></script>

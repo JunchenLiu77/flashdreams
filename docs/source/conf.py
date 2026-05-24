@@ -5,6 +5,14 @@
 
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from pathlib import Path
+import sys
+
+# Ensure autodoc imports the in-repo package (flashdreams/flashdreams/*)
+# instead of any older site-packages install missing newer modules.
+_DOCS_SOURCE_DIR = Path(__file__).resolve().parent
+_REPO_SRC_ROOT = _DOCS_SOURCE_DIR.parent.parent / "flashdreams"
+sys.path.insert(0, str(_REPO_SRC_ROOT))
 
 # -- Project information -----------------------------------------------------
 
