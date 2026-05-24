@@ -101,3 +101,11 @@ Profiling.
    :alt: Lingbot-World total latency bar chart by hardware and method.
 
    *DiT runtime at 6-th autoregressive rollout on 4x GPUs.*
+
+Benchmark figure
+----------------
+
+.. figure:: /_static/perf/perf-0521-lingbot-world.svg
+   :class: benchmark-figure
+   :figclass: benchmark-figure-wrap
+   :alt: Lingbot-World benchmark chart.

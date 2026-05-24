@@ -16,88 +16,94 @@
 System overview
 ===================================
 
-FlashDreams keeps shared runtime code separate from model integrations.
+FlashDreams separates reusable runtime orchestration from model-specific
+implementation. The infra layer defines the contracts for runners, pipelines,
+encoders, diffusion models, transformers, schedulers, decoders, and caches.
+Recipes and integrations fill those contracts with concrete model code.
 
-.. raw:: html
+.. Figure creation trace: https://chatgpt.com/share/6a12a13f-19f0-83e8-bf02-f02e6c236fb5
 
-   <div class="ai-figure-placeholder">
-     <div class="ai-figure-title">Figure placeholder: FlashDreams repo and runtime architecture</div>
-     <div class="ai-figure-body">
-       Replace this block with an AI-generated 16:9 architecture illustration.
-       The figure should show the repo layers and runtime flow from runner to
-       pipeline to model components.
-     </div>
-   </div>
+.. image:: /_static/diagrams/system_overview.jpg
+   :alt: FlashDreams serving session lifecycle with initialize, generate, finalize, and persistent cache state.
 
-.. dropdown:: AI architecture figure prompt
+The serving session runs one ``initialize_cache`` phase, then repeats
+``generate`` and ``finalize``. ``generate`` produces the next output chunk;
+``finalize`` advances the world state so the next chunk continues from the same
+session instead of starting over.
 
-   .. code-block:: text
+Computation To Infra Map
+------------------------
 
-      Create a beautiful technical architecture illustration for FlashDreams
-      developer documentation.
+.. list-table::
+   :header-rows: 1
+   :widths: 22 34 44
 
-      Show the repo design as layered blocks:
-      core: attention, distributed utilities, IO primitives.
-      infra: configs, runner, pipeline, encoder, transformer, scheduler, decoder,
-      serving contracts.
-      recipes: reusable model components.
-      integrations: standalone plugin-style model packages.
+   * - Stage
+     - Infra class / contract
+     - Integration responsibility
+   * - Launch and I/O
+     - ``Runner`` + ``RunnerConfig``; see :doc:`/apis/recipes`
+     - Define slugged runner configs, usually with ``runner_name`` matching
+       ``pipeline.recipe_name``. ``Runner.run`` resolves prompts, images,
+       controls, output paths, device/rank behavior, and rank-zero persistence.
+   * - Runtime container
+     - ``StreamInferencePipeline`` + ``StreamInferencePipelineConfig``; see
+       :doc:`/apis/infra`
+     - Provide config literals that wire the optional per-step encoder,
+       ``DiffusionModel``, optional decoder, and recipe slug. Most integrations
+       use the base pipeline; custom pipelines adapt signatures such as T2V/I2V
+       ``height``/``width`` or first-frame inputs.
+   * - Session initialization
+     - ``StreamInferencePipeline.initialize_cache``
+     - Build the per-rollout cache tree once. Integration pipelines prepare
+       context such as text embeddings, image embeddings, latent height/width,
+       first-frame state, encoder cache, decoder cache, and transformer AR/KV
+       cache.
+   * - One-shot context
+     - ``Encoder`` used as ``transformer.context_encoder``
+     - Encode global conditioning once per rollout, such as text prompts,
+       negative prompts for CFG, CLIP image embeddings, or identity
+       passthroughs. This belongs to transformer context, not per-step control.
+   * - Per-step control
+     - ``StreamingEncoder`` / ``StreamingVideoEncoder`` used as
+       ``pipeline.encoder``
+     - Convert each AR step's live input into model conditioning. Examples
+       include camera controls, HDMap videos, image/video control chunks, and
+       I2V first-frame VAE encoding with an encoder cache.
+   * - Denoising loop
+     - ``DiffusionModel.generate`` + ``Scheduler``
+     - Choose the scheduler config and inference-step schedule. The infra model
+       samples noise, runs the scheduler loop, calls transformer flow
+       prediction, and returns a clean latent chunk plus ``final_state``.
+   * - Model forward
+     - ``Transformer.predict_flow`` and ``TransformerAutoregressiveCache``
+     - Implement the concrete recipe transformer and DiT network. This is where
+       patchify/unpatchify, context-parallel split/gather, RoPE, AR/KV cache,
+       CFG cond/uncond branches, ``torch.compile``, and optional CUDA Graph
+       replay are connected to the model.
+   * - Output chunk
+     - ``StreamingDecoder`` / ``StreamingVideoDecoder`` used as
+       ``pipeline.decoder``
+     - Convert clean latent chunks into frames or application-facing outputs.
+       Video decoders expose temporal/spatial compression contracts so pipelines
+       can reason about chunk sizes.
+   * - State advance
+     - ``DiffusionModel.finalize`` + ``Transformer.finalize_kv_cache``
+     - Consume ``final_state`` from ``generate``, optionally re-noise the clean
+       latent, advance transformer AR/KV cache state, and run post-update hooks.
+       The next ``generate`` continues the same evolving world state.
 
-      Show the conceptual runtime flow across the center: Runner -> Pipeline ->
-      Encoder -> Diffusion / Transformer / Scheduler -> Decoder -> Output, with
-      an optional Serving Session wrapping the loop for streaming applications.
+Code Ownership
+--------------
 
-      Visual style: clean modern developer-doc architecture diagram, vector-like,
-      elegant accent colors, readable labels, balanced spacing, soft shadows,
-      minimal clutter, white or dark neutral background, professional and
-      attractive. The figure should feel like a high-level product architecture
-      overview rather than a dense UML diagram. Aspect ratio 16:9, high
-      resolution, crisp text.
-
-.. figure:: /_static/diagrams/system_overview_flow.svg
-   :alt: High-level FlashDreams system flow from CLI to pipeline and outputs.
-
-   High-level flow across CLI, runner, pipeline, diffusion/model components,
-   and distributed runtime.
-
-Repo map
---------
-
-.. raw:: html
-
-   <div class="fd-highlight-grid">
-     <div class="fd-highlight-card">
-       <div class="fd-highlight-title">core</div>
-       <div class="fd-highlight-body">Attention, distributed helpers, checkpoint loading, and IO utilities.</div>
-     </div>
-     <div class="fd-highlight-card">
-       <div class="fd-highlight-title">infra</div>
-       <div class="fd-highlight-body">Configs, runner, pipeline, encoder, decoder, scheduler, CUDA graph, and serving contracts.</div>
-     </div>
-     <div class="fd-highlight-card">
-       <div class="fd-highlight-title">recipes</div>
-       <div class="fd-highlight-body">Reusable in-package model components shared by integrations.</div>
-     </div>
-     <div class="fd-highlight-card">
-       <div class="fd-highlight-title">integrations</div>
-       <div class="fd-highlight-body">Standalone plugin-style model packages with configs and runners.</div>
-     </div>
-   </div>
-
-Execution flow (code-mapped)
-----------------------------
-
-``flashdreams-run`` resolves a runner, the runner prepares user inputs, the
-pipeline executes ``initialize_cache`` -> ``generate`` -> ``finalize``, and
-rank 0 writes user-facing artifacts.
-
-Code map
---------
-
-- :doc:`/apis/core` for low-level kernels and distributed utilities.
-- :doc:`/apis/infra` for pipeline, diffusion, and runner abstractions.
-- :doc:`/apis/recipes` for pipeline/runner API surfaces and integration map.
-- :doc:`/developer_guides/usage_patterns` for running existing models,
-  programmatic access, and choosing the right developer workflow.
-- :doc:`/developer_guides/new_recipes` for implementing and registering new
-  models.
+- :doc:`/apis/core` owns reusable primitives such as attention, KV cache,
+  context-parallel utilities, checkpoint loading, and IO helpers.
+- :doc:`/apis/infra` owns abstract contracts and orchestration: config,
+  pipeline, diffusion model, scheduler, transformer, encoder, decoder, compile,
+  CUDA graph, and serving contracts.
+- :doc:`/apis/recipes` documents the public pipeline/runner surface and the
+  current integration map.
+- :doc:`/developer_guides/usage_patterns` explains how to run existing models or
+  call FlashDreams programmatically.
+- :doc:`/developer_guides/new_recipes` explains how to implement and register a
+  new model integration.

@@ -56,6 +56,6 @@ Resolve config only (no model instantiation):
 See also
 --------
 
-- :doc:`/getting_started/first_world_model`
+- :doc:`/quickstart/first_world_model`
 - :doc:`/developer_guides/configs`
 - :doc:`/apis/infra`

@@ -13,7 +13,7 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-Launch your first world model
+Launch your first model
 ===================================
 
 This page provides a minimal path for:
@@ -27,7 +27,7 @@ If you are new to the distinction, read
 Prerequisites
 -------------
 
-Complete the setup in :doc:`/getting_started/installation` first:
+Complete the setup in :doc:`/quickstart/installation` first:
 
 - :ref:`run-models-directly-in-this-codebase`
 - :ref:`environment-variables`

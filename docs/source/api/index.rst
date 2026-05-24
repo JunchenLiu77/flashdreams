@@ -13,13 +13,13 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-Getting Started
+:orphan:
+
+API
 ===================================
 
-Start here to understand FlashDreams, install it, run your first model, and
-explore supported model families.
+Reference docs for CLI usage and Python APIs.
 
-- :doc:`What is world model serving? </getting_started/offline_vs_online>`
-- :doc:`Installation </getting_started/installation>`
-- :doc:`Launch your first world model </getting_started/first_world_model>`
-- :doc:`Supported models </getting_started/supported_models>`
+- :doc:`Reference overview </reference/index>`
+- :doc:`CLI reference </reference/cli>`
+- :doc:`Python API overview </apis/index>`

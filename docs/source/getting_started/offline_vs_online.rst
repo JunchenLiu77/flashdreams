@@ -77,4 +77,4 @@ once, then advance the world continuously at a fixed pace.
 
 FlashDreams uses this online serving path for interactive integrations such as
 :doc:`/models/lingbot_world` and :doc:`/models/omnidreams`. To try a model,
-start with :doc:`/getting_started/first_world_model`.
+start with :doc:`/quickstart/first_world_model`.

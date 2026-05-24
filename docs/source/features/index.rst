@@ -13,40 +13,19 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-Models
+:orphan:
+
+Model Cards
 ===================================
 
-FlashDreams supports multiple world/video model families behind one unified CLI
-and programmatic pipeline interface.
+Explore supported model families, launch paths, and performance notes.
 
-Running a model
----------------
-
-.. code-block:: bash
-
-   uv run flashdreams-run <MODEL_SLUG> --help
-
-Examples:
-
-.. code-block:: bash
-
-   uv run flashdreams-run self-forcing-wan2.1-t2v-1.3b-flash --total-blocks 7
-   uv run flashdreams-run lingbot-world-fast --example-data True --total-blocks 21
-
-Implemented models
-------------------
-
-- :doc:`OmniDreams </models/omnidreams>`
-- :doc:`Self-Forcing </models/self_forcing>`
+- :doc:`Model family catalog </models/index>`
+- :doc:`Lingbot-World showcase </models/lingbot_world>`
+- :doc:`OmniDreams showcase </models/omnidreams>`
+- :doc:`Self-Forcing performance notes </models/self_forcing>`
+- :doc:`Wan2.1 performance notes </models/wan21>`
 - :doc:`Causal-Forcing </models/causal_forcing>`
 - :doc:`Causal Wan2.2 </models/causal_wan22>`
-- :doc:`Lingbot-World </models/lingbot_world>`
 - :doc:`FlashVSR </models/flashvsr>`
 - :doc:`Cosmos-Predict2.5 </models/cosmos_predict2>`
-- :doc:`Wan2.1 </models/wan21>`
-
-Adding your own model
----------------------
-
-See :doc:`/developer_guides/new_recipes` for model integration and registration
-guidance.

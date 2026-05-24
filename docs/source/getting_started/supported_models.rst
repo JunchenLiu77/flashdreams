@@ -24,7 +24,7 @@ Autoregressive / streaming models
 
 - :doc:`Self-Forcing </models/self_forcing>`
 - :doc:`Causal-Forcing </models/causal_forcing>`
-- :doc:`Causal Wan2.2 </models/fastvideo_wan22>`
+- :doc:`Causal Wan2.2 </models/causal_wan22>`
 - :doc:`Lingbot-World </models/lingbot_world>`
 - :doc:`OmniDreams </models/omnidreams>`
 - :doc:`FlashVSR </models/flashvsr>`

@@ -54,7 +54,7 @@ Then pick a model page for actual slugs and flags:
 
 - :doc:`/models/self_forcing`
 - :doc:`/models/causal_forcing`
-- :doc:`/models/fastvideo_wan22`
+- :doc:`/models/causal_wan22`
 - :doc:`/models/lingbot_world`
 - :doc:`/models/omnidreams`
 - :doc:`/models/wan21`

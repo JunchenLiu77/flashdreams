@@ -68,3 +68,11 @@ We provide the following variants:
      - Wan 2.1 T2V 1.3B at 480p (single AR step, prompt-only).
    * - ``wan21-i2v-14b-480p``
      - Wan 2.1 I2V 14B at 480p (single AR step, prompt + first-frame).
+
+Benchmark figure
+----------------
+
+.. figure:: /_static/perf/perf-0521-wan21.svg
+   :class: benchmark-figure
+   :figclass: benchmark-figure-wrap
+   :alt: Wan2.1 benchmark chart.
