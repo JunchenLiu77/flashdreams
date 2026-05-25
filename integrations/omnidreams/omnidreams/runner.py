@@ -63,7 +63,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 EXAMPLE_DATA_HF_REPO = omni_dreams_hf_repo("omni-dreams-samples")
 """Single-view HDMap clips + first frames under the configured HF org."""
 
-DEFAULT_EXAMPLE_DATA_UUID_1V = "23599139-948f-4681-b7f4-74794113086d"
+DEFAULT_EXAMPLE_DATA_UUID_1V = "239560dc-33d1-11ef-9720-00044bcbccac"
 """Arbitrary first-alphabetically pick from the 32 single-view clips
 the dataset ships. Override with ``--example-data-uuid <uuid>``; see
 the configured Omni Dreams HF dataset's ``data/single_view`` directory."""

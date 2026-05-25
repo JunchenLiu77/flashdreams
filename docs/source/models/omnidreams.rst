@@ -53,21 +53,15 @@ To run OmniDreams, launch one of the registered runner slugs via
 
 .. code-block:: bash
 
-   uv run flashdreams-run \
-       omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae \
+   uv run --project integrations/omnidreams \
+       flashdreams-run \
+       omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf \
        --example-data True \
+       --example_data_uuid "239560dc-33d1-11ef-9720-00044bcbccac" \
        --total-blocks 20
 
-For multi-GPU inference, simply use ``uv run torchrun --nproc_per_node=4 --no-python flashdreams-run``
-instead of ``uv run flashdreams-run`` (taking 4 GPUs as an example).
-
-To inspect all supported CLI arguments and their default values, run:
-
-.. code-block:: bash
-
-   uv run --project integrations/omnidreams flashdreams-run \
-       omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae \
-       --help
+Sample example-data UUIDs for the inference script are available in the
+`nvidia/omni-dreams-samples Hugging Face dataset <https://huggingface.co/datasets/nvidia/omni-dreams-samples/>`_.
 
 We provide the following variants:
 
@@ -77,13 +71,60 @@ We provide the following variants:
 
    * - Method
      - Description
-   * - ``omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae``
-     - Interactive Steering Wheel Demo Checkpoint.
+   * - ``omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf``
+     - Single-view 2-step HDMap-conditioned I2V.
+
+For multi-GPU inference, use:
+
+.. code-block:: bash
+
+   uv run --project integrations/omnidreams \
+       torchrun --nproc_per_node=4 --no-python flashdreams-run \
+       omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae \
+       --example-data True \
+       --example_data_uuid "239560dc-33d1-11ef-9720-00044bcbccac" \
+       --total-blocks 20
+
+To inspect all supported CLI arguments and their default values, run:
+
+.. code-block:: bash
+
+   uv run --project integrations/omnidreams \
+       flashdreams-run \
+       omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf \
+       --help
+
+Some generated samples:
+
+.. raw:: html
+
+   <div class="model-video-grid">
+     <div class="model-video-card">
+       <!-- <div class="model-video-placeholder">Video placeholder</div> -->
+       <video class="model-video-player" autoplay muted loop playsinline preload="metadata">
+         <source src="https://research-staging.nvidia.com/labs/sil/projects/flashdreams/assets/omnidreams/omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-239560dc-33d1-11ef-9720-00044bcbccac-pip.mp4" type="video/mp4">
+         Your browser does not support the video tag.
+       </video>
+       <div class="model-video-overlay">
+         example_data_uuid: "239560dc-33d1-11ef-9720-00044bcbccac"
+       </div>
+     </div>
+     <div class="model-video-card">
+       <!-- <div class="model-video-placeholder">Video placeholder</div> -->
+       <video class="model-video-player" autoplay muted loop playsinline preload="metadata">
+         <source src="https://research-staging.nvidia.com/labs/sil/projects/flashdreams/assets/omnidreams/omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-24b84744-4156-11ef-b27d-00044bf655de-pip.mp4" type="video/mp4">
+         Your browser does not support the video tag.
+       </video>
+       <div class="model-video-overlay">
+         example_data_uuid: "24b84744-4156-11ef-b27d-00044bf655de"
+       </div>
+     </div>
+   </div>
 
 Launch the interactive server
 -----------------------------
 
-Spin up the interactive server for OmniDreams single-view via webRTC:
+Spin up the interactive single-view OmniDreams server via WebRTC:
 
 .. code-block:: bash
 
@@ -91,33 +132,33 @@ Spin up the interactive server for OmniDreams single-view via webRTC:
    uv run --package flash-omnidreams torchrun --nproc_per_node 1 \
        -m omnidreams.webrtc.server \
        --host 0.0.0.0 --port 8089 \
-       --pipeline_config_name omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae
+       --pipeline_config_name omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf \
+       --scene-uuid "065dcac9-ee67-4434-a835-c6b816c88e48"
 
-Then open the following URL in your browser:
+Sample scene UUIDs for the interactive server are available in the
+`nvidia/omni-dreams-scenes Hugging Face dataset <https://huggingface.co/datasets/nvidia/omni-dreams-scenes/>`_.
 
-- ``http://<server-ip>:8089/request_session`` to connect to the server
-- ``http://<server-ip>:8089/healthz`` to check the server status (for debugging)
-
-<server-ip> is the IP address of the server, can be "localhost" if the server is running locally.
+The server may take a few minutes to warm up. When it is ready, it prints
+``Connect via http://<server-ip>:8089/request_session``.
+Here, ``<server-ip>`` is the server IP address you are connecting to
+(can use ``localhost`` when running locally).
 
 Interactive serving and UI showcase
 -----------------------------------
 
 .. raw:: html
 
-   <div class="model-video-grid">
-     <div class="model-video-card">
-       <div class="model-video-placeholder">Recorded interactive serving demo (placeholder)</div>
-     </div>
-     <div class="model-video-card">
-       <div class="model-video-placeholder">Recorded UI walkthrough (placeholder)</div>
-     </div>
-   </div>
+  <div class="model-video-card" style="width: 100%; margin: 10px auto 14px;">
+    <video class="model-video-player" autoplay muted loop playsinline preload="metadata">
+      <source src="https://research.nvidia.com/labs/sil/projects/alpadreams/assets/omnidreams/omnidreams-demo-0524-720P.mp4" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+  </div>
 
 Performance table
 -----------------
 
-Single-view latency on NVIDIA GB300 (``704 x 1280``).
+Single-view latency on NVIDIA GB300 at ``704 x 1280`` resolution.
 
 .. list-table::
    :header-rows: 1

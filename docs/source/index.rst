@@ -157,9 +157,9 @@ Start Here
    :caption: Model Cards
    :hidden:
 
+   Self-Forcing <models/self_forcing>
    OmniDreams <models/omnidreams>
    Lingbot-World <models/lingbot_world>
-   Self-Forcing <models/self_forcing>
    Causal-Forcing <models/causal_forcing>
    Causal Wan2.2 <models/causal_wan22>
    FlashVSR <models/flashvsr>

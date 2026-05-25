@@ -192,6 +192,28 @@ def test_prepare_clipgt_dir_stages_unprefixed_parquets(
     assert (staged_from_relative / "clip.calibration_estimate.parquet").exists()
 
 
+def test_prepare_clipgt_dir_stages_nested_unprefixed_parquets(tmp_path: Path) -> None:
+    clipgt = tmp_path / "clipgt"
+    clipgt.mkdir()
+    nested = clipgt / "clipgt"
+    nested.mkdir()
+    (clipgt / "first_image.png").touch()
+    (clipgt / "prompt.txt").touch()
+    (nested / "calibration_estimate.parquet").touch()
+    (nested / "egomotion_estimate.parquet").touch()
+    (nested / "lane.parquet").touch()
+    runtime = OmnidreamsInferenceRuntime(
+        config=OmnidreamsRuntimeConfig(device="cpu", fps=30)
+    )
+
+    staged = runtime._prepare_clipgt_dir(clipgt)
+
+    assert staged != clipgt
+    assert (staged / "clip.calibration_estimate.parquet").exists()
+    assert (staged / "clip.egomotion_estimate.parquet").exists()
+    assert (staged / "clip.lane.parquet").exists()
+
+
 def test_hf_webrtc_scene_sync_requires_usdz_first_frame(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

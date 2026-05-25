@@ -622,14 +622,36 @@ class OmnidreamsInferenceRuntime:
         )
 
     def _prepare_clipgt_dir(self, clipgt_dir: Path) -> Path:
-        if list(clipgt_dir.glob("*.calibration_estimate.parquet")):
+        def _has_prefixed_parquets(path: Path) -> bool:
+            return any(path.glob("*.calibration_estimate.parquet"))
+
+        def _has_unprefixed_parquets(path: Path) -> bool:
+            return (path / "calibration_estimate.parquet").exists()
+
+        if _has_prefixed_parquets(clipgt_dir):
             return clipgt_dir
-        if not (clipgt_dir / "calibration_estimate.parquet").exists():
+
+        parquet_source_dir: Path | None = None
+        if _has_unprefixed_parquets(clipgt_dir):
+            parquet_source_dir = clipgt_dir
+        else:
+            # Some HF scenes extract into ``clipgt/clipgt`` (or another single
+            # nested directory) while first_image/prompt stay one level up.
+            # Discover that nested parquet root and normalize it for loader use.
+            nested_candidates = [child for child in clipgt_dir.iterdir() if child.is_dir()]
+            for candidate in nested_candidates:
+                if _has_prefixed_parquets(candidate):
+                    return candidate
+                if _has_unprefixed_parquets(candidate):
+                    parquet_source_dir = candidate
+                    break
+
+        if parquet_source_dir is None:
             return clipgt_dir
 
         self._clipgt_temp_dir = tempfile.TemporaryDirectory(prefix="omnidreams-clipgt-")
         staged = Path(self._clipgt_temp_dir.name)
-        for source in clipgt_dir.glob("*.parquet"):
+        for source in parquet_source_dir.glob("*.parquet"):
             target = staged / f"clip.{source.name}"
             os.symlink(source.resolve(), target)
         return staged
