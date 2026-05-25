@@ -3,10 +3,10 @@
 #
 # Sphinx configuration for the FlashDreams documentation site.
 
+import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-import sys
 
 # Ensure autodoc imports the in-repo package (flashdreams/flashdreams/*)
 # instead of any older site-packages install missing newer modules.

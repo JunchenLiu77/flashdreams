@@ -133,7 +133,7 @@ matched settings.
      <figcaption>
        <p>
          This chart shows total DiT runtime (4 diffusion steps) in milliseconds at the 6th autoregressive rollout on 4x GPUs.
-         For an apples-to-apples comparison, all implementations are forced to use cuDNN attention backend under matched runtime settings, 
+         For an apples-to-apples comparison, all implementations are forced to use cuDNN attention backend under matched runtime settings,
          and all runs use Ulysses sequence parallelism for multi-GPU inference.
          For the official Lingbot-World implementation, see
          <a href="https://github.com/NVIDIA/flashdreams/tree/main/integrations/lingbot/tests/parity_check">this instruction</a>.

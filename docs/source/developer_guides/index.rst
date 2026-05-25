@@ -23,6 +23,7 @@ model integration.
 Guides
 ------
 
+- :doc:`Offline vs online world-model flow </developer_guides/offline_vs_online>`
 - :doc:`System overview </developer_guides/system_overview>`
 - :doc:`How to use FlashDreams as a developer </developer_guides/usage_patterns>`
 - :doc:`Configs </developer_guides/configs>`

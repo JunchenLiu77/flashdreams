@@ -55,38 +55,47 @@ docs/
 └── source/
     ├── conf.py             # Sphinx configuration (theme + extensions)
     ├── index.rst           # overview landing page + top-level toctrees
-    ├── getting_started/
-    │   ├── offline_vs_online.rst
+    ├── quickstart/
+    │   ├── index.rst
     │   ├── installation.rst
-    │   ├── first_world_model.rst
-    │   └── supported_models.rst
+    │   └── first_world_model.rst
     ├── developer_guides/
+    │   ├── offline_vs_online.rst
+    │   ├── index.rst
     │   ├── new_recipes.rst
     │   ├── system_overview.rst
     │   ├── usage_patterns.rst
     │   ├── configs.rst
     │   └── interactive_serving.rst
-    ├── reference/
+    ├── api/
+    │   ├── index.rst
     │   ├── cli.rst
-    │   └── index.rst
-    ├── apis/
     │   ├── core.rst        # flashdreams.core (attention, distributed, …)
     │   ├── infra.rst       # flashdreams.infra (pipeline, diffusion, …)
     │   ├── recipes.rst     # flashdreams.recipes (wan, cosmos, …)
     │   └── serving.rst     # serving architecture and launch patterns
     └── models/
+        ├── index.rst
         ├── omnidreams.rst
         ├── self_forcing.rst
         ├── causal_forcing.rst
-        ├── fastvideo_wan22.rst
+        ├── causal_wan22.rst
         ├── lingbot_world.rst
         ├── flashvsr.rst
         ├── cosmos_predict2.rst
         └── wan21.rst
 ```
 
-Benchmark sources and chart generator live under ``docs/benchmarks/`` and emit
-SVG assets into ``docs/source/_static/perf/``.
+Benchmark data now follows a JS + Markdown pipeline:
+
+- Per-model benchmark tables live in
+  ``docs/source/_static/performance/<model>/perf-*.md``.
+- Model pages declare chart metadata with ``data-benchmark-*`` attributes.
+- ``docs/source/_static/js/benchmark_chart.js`` loads those markdown tables at
+  runtime and renders SVG charts in the browser.
+
+The ``docs/benchmarks/`` directory still hosts the benchmark JSON corpus and
+schema used for tracking raw measurements.
 
 ## Hosting on GitHub Pages
 

@@ -13,13 +13,15 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-:orphan:
+.. :orphan:
 
-API
+API reference
 ===================================
 
-Reference docs for CLI usage and Python APIs.
+Reference pages for FlashDreams Python APIs.
 
-- :doc:`Reference overview </reference/index>`
-- :doc:`CLI reference </reference/cli>`
-- :doc:`Python API overview </apis/index>`
+- :doc:`CLI reference </api/cli>`
+- :doc:`Core </api/core>`
+- :doc:`Infra </api/infra>`
+- :doc:`Pipelines and runners </api/recipes>`
+- :doc:`Serving </api/serving>`

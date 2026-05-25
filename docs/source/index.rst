@@ -124,7 +124,7 @@ Start Here
          <div class="fd-highlight-body">Install FlashDreams, launch your first world-model server, and start exploring quickly.</div>
        </div>
      </a>
-     <a class="fd-highlight-link" href="features/index.html">
+    <a class="fd-highlight-link" href="models/index.html">
        <div class="fd-highlight-card">
          <div class="fd-highlight-title">Model Cards</div>
          <div class="fd-highlight-body">See supported models, how to launch each one, and their performance analysis.</div>
@@ -136,7 +136,7 @@ Start Here
          <div class="fd-highlight-body">Find CLI and Python API references, with links to lower-level modules.</div>
        </div>
      </a>
-     <a class="fd-highlight-link" href="cookbook/index.html">
+    <a class="fd-highlight-link" href="developer_guides/index.html">
        <div class="fd-highlight-card">
          <div class="fd-highlight-title">Developer Guides</div>
          <div class="fd-highlight-body">Learn the system design, how to integrate new models, and how to use it in your own projects.</div>
@@ -167,22 +167,25 @@ Start Here
    Cosmos-Predict2.5 <models/cosmos_predict2>
 
 .. toctree::
-   :maxdepth: 2
-   :caption: API
-   :hidden:
-
-   CLI reference <reference/cli>
-   Python API <apis/index>
-
-.. toctree::
    :maxdepth: 1
    :caption: Developer Guides
    :hidden:
 
-   Offline vs online world-model flow <getting_started/offline_vs_online>
+   Offline vs online world-model flow <developer_guides/offline_vs_online>
    Runtime system overview <developer_guides/system_overview>
    Interactive serving architecture <developer_guides/interactive_serving>
    Developer workflow patterns <developer_guides/usage_patterns>
    Developer guides overview <developer_guides/index>
    Add a new model integration <developer_guides/new_recipes>
    Configure runs and overrides <developer_guides/configs>
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API and CLIs
+   :hidden:
+
+   CLI reference <api/cli>
+   Core <api/core>
+   Infra <api/infra>
+   Pipelines and runners <api/recipes>
+   Serving <api/serving>

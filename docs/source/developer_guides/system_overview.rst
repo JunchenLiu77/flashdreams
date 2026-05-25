@@ -42,13 +42,13 @@ Computation To Infra Map
      - Infra class / contract
      - Integration responsibility
    * - Launch and I/O
-     - ``Runner`` + ``RunnerConfig``; see :doc:`/apis/recipes`
+     - ``Runner`` + ``RunnerConfig``; see :doc:`/api/recipes`
      - Define slugged runner configs, usually with ``runner_name`` matching
        ``pipeline.recipe_name``. ``Runner.run`` resolves prompts, images,
        controls, output paths, device/rank behavior, and rank-zero persistence.
    * - Runtime container
      - ``StreamInferencePipeline`` + ``StreamInferencePipelineConfig``; see
-       :doc:`/apis/infra`
+       :doc:`/api/infra`
      - Provide config literals that wire the optional per-step encoder,
        ``DiffusionModel``, optional decoder, and recipe slug. Most integrations
        use the base pipeline; custom pipelines adapt signatures such as T2V/I2V
@@ -96,12 +96,12 @@ Computation To Infra Map
 Code Ownership
 --------------
 
-- :doc:`/apis/core` owns reusable primitives such as attention, KV cache,
+- :doc:`/api/core` owns reusable primitives such as attention, KV cache,
   context-parallel utilities, checkpoint loading, and IO helpers.
-- :doc:`/apis/infra` owns abstract contracts and orchestration: config,
+- :doc:`/api/infra` owns abstract contracts and orchestration: config,
   pipeline, diffusion model, scheduler, transformer, encoder, decoder, compile,
   CUDA graph, and serving contracts.
-- :doc:`/apis/recipes` documents the public pipeline/runner surface and the
+- :doc:`/api/recipes` documents the public pipeline/runner surface and the
   current integration map.
 - :doc:`/developer_guides/usage_patterns` explains how to run existing models or
   call FlashDreams programmatically.

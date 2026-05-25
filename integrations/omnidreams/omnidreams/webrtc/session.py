@@ -638,7 +638,9 @@ class OmnidreamsInferenceRuntime:
             # Some HF scenes extract into ``clipgt/clipgt`` (or another single
             # nested directory) while first_image/prompt stay one level up.
             # Discover that nested parquet root and normalize it for loader use.
-            nested_candidates = [child for child in clipgt_dir.iterdir() if child.is_dir()]
+            nested_candidates = [
+                child for child in clipgt_dir.iterdir() if child.is_dir()
+            ]
             for candidate in nested_candidates:
                 if _has_prefixed_parquets(candidate):
                     return candidate

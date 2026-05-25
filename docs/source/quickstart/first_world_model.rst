@@ -22,7 +22,7 @@ This page provides a minimal path for:
 2. online interactive world-model serving with Lingbot-World.
 
 If you are new to the distinction, read
-:doc:`/getting_started/offline_vs_online` first.
+:doc:`/developer_guides/offline_vs_online` first.
 
 Prerequisites
 -------------
@@ -84,7 +84,7 @@ Multi GPU:
 Next steps
 ----------
 
-- For complete per-model launch options, see :doc:`/getting_started/supported_models`.
+- For complete per-model launch options, see :doc:`/models/index`.
 - For model-specific details, see :doc:`/models/index`.
 - For the conceptual difference between one-shot inference and persistent
-  serving, see :doc:`/getting_started/offline_vs_online`.
+  serving, see :doc:`/developer_guides/offline_vs_online`.

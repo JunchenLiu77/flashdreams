@@ -55,7 +55,7 @@ Serving model
    </div>
 
 This is the online path described in
-:doc:`/getting_started/offline_vs_online`.
+:doc:`/developer_guides/offline_vs_online`.
 
 Reference integrations
 ----------------------
@@ -68,6 +68,6 @@ Reference integrations
 Serving implementation references
 ---------------------------------
 
-- :doc:`/apis/serving` for serving API concepts and component mapping.
+- :doc:`/api/serving` for serving API concepts and component mapping.
 - :doc:`/developer_guides/system_overview` for runner/pipeline execution flow.
 - ``integrations/lingbot/lingbot/webrtc`` for the WebRTC serving stack.

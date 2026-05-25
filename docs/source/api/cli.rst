@@ -58,4 +58,4 @@ See also
 
 - :doc:`/quickstart/first_world_model`
 - :doc:`/developer_guides/configs`
-- :doc:`/apis/infra`
+- :doc:`/api/infra`
