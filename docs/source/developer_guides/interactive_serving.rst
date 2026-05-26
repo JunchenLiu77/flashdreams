@@ -13,7 +13,7 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-.. orphan:
+:orphan:
 
 Interactive serving
 ===================================
@@ -56,8 +56,6 @@ Serving model
      </div>
    </div>
 
-This is the online path described in
-:ref:`online-serving-focus`.
 
 Reference integrations
 ----------------------

@@ -13,7 +13,7 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-.. orphan:
+:orphan:
 
 How to use FlashDreams as a developer
 =====================================
