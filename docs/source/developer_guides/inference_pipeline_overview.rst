@@ -114,7 +114,7 @@ A typical :class:`~flashdreams.infra.pipeline.StreamInferencePipelineConfig` is 
 
    # create a pipeline config
    pipeline_config = StreamInferencePipelineConfig(
-       recipe_name="customized-method-name",
+       name="customized-method-name",
        encoder=MyStreamingEncoderConfig(),
        diffusion_model=DiffusionModelConfig(
            transformer=MyTransformerConfig(),

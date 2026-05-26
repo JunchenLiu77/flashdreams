@@ -40,7 +40,7 @@ from flashdreams.recipes.template.transformer import TemplateTransformerConfig
 from flashdreams.recipes.template.transformer.network import TemplateDiTConfig
 
 TEMPLATE_OFFLINE = StreamInferencePipelineConfig(
-    recipe_name="template-offline",
+    name="template-offline",
     encoder=TemplateControlEncoderConfig(
         control_channels=8,
         out_channels=4,
@@ -93,7 +93,7 @@ TEMPLATE_AUTOREGRESSIVE = cast(
     StreamInferencePipelineConfig,
     derive_config(
         TEMPLATE_OFFLINE,
-        recipe_name="template-autoregressive",
+        name="template-autoregressive",
         diffusion_model=dict(
             transformer=dict(
                 len_t=2,
@@ -115,7 +115,7 @@ TEMPLATE_AUTOREGRESSIVE_COMPILED = cast(
     StreamInferencePipelineConfig,
     derive_config(
         TEMPLATE_AUTOREGRESSIVE,
-        recipe_name="template-autoregressive-compiled",
+        name="template-autoregressive-compiled",
         diffusion_model=dict(
             transformer=dict(
                 compile_network=True,
@@ -130,17 +130,17 @@ the DiT network. The fast deployment path: keep
 this when measuring inference latency."""
 
 TEMPLATE_CONFIGS: dict[str, StreamInferencePipelineConfig] = {
-    cfg.recipe_name: cfg
+    cfg.name: cfg
     for cfg in (
         TEMPLATE_OFFLINE,
         TEMPLATE_AUTOREGRESSIVE,
         TEMPLATE_AUTOREGRESSIVE_COMPILED,
     )
 }
-"""All shipped template-recipe variants, keyed by ``recipe_name``."""
+"""All shipped template-recipe variants, keyed by ``name``."""
 
 
-## Per-variant runner configs (slug == ``pipeline.recipe_name``).
+## Per-variant runner configs (slug == ``pipeline.name``).
 
 TEMPLATE_OFFLINE_RUNNER = TemplateRunnerConfig(
     runner_name="template-offline",

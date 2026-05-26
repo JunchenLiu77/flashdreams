@@ -18,7 +18,7 @@
 Cheap import-time checks that catch the common mis-registrations:
 duplicate keys, dict key vs ``runner_name`` drift, recipes that
 forgot to add their runners to the aggregator, runner_name vs
-pipeline.recipe_name drift (which would surface as confusing
+pipeline.name drift (which would surface as confusing
 ``flashdreams-run <slug>`` failures), and missing CLI descriptions.
 """
 
@@ -76,20 +76,20 @@ def test_supported_runners_unique_runner_names() -> None:
     assert not duplicates, f"duplicate runner_name in supported_runners: {duplicates}"
 
 
-def test_runner_name_mirrors_pipeline_recipe_name() -> None:
-    """``runner_name`` must equal ``pipeline.recipe_name`` by convention.
+def test_runner_name_mirrors_pipeline_name() -> None:
+    """``runner_name`` must equal ``pipeline.name`` by convention.
 
-    The CLI's contract is "``flashdreams-run <recipe_name>`` runs that recipe";
+    The CLI's contract is "``flashdreams-run <name>`` runs that recipe";
     a divergence here would silently rename one slug and break that
     contract. Per-runner literals are free to opt out, but the in-tree
     set must hold the line.
     """
     drifted = {
-        key: (cfg.runner_name, cfg.pipeline.recipe_name)
+        key: (cfg.runner_name, cfg.pipeline.name)
         for key, cfg in supported_runners().items()
-        if cfg.runner_name != cfg.pipeline.recipe_name
+        if cfg.runner_name != cfg.pipeline.name
     }
-    assert not drifted, f"runner_name != pipeline.recipe_name (CLI contract): {drifted}"
+    assert not drifted, f"runner_name != pipeline.name (CLI contract): {drifted}"
 
 
 def test_supported_runners_have_descriptions() -> None:

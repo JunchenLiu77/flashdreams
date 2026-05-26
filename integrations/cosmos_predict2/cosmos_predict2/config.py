@@ -38,7 +38,7 @@ CHECKPOINT_PATH_POST_TRAINED_2B = (
 """Cosmos-Predict 2.5 2B post-trained EMA checkpoint."""
 
 PIPELINE_COSMOS2_T2V_2B_720P = CosmosInferencePipelineConfig(
-    recipe_name="cosmos2-t2v-2b-720p",
+    name="cosmos2-t2v-2b-720p",
     enable_sync_and_profile=True,
     encoder=None,
     decoder=WanVAEDecoderConfig(),
@@ -66,14 +66,14 @@ PIPELINE_COSMOS2_T2V_2B_720P = CosmosInferencePipelineConfig(
     ),
 )
 RUNNER_COSMOS2_T2V_2B_720P = Cosmos2T2VRunnerConfig(
-    runner_name=PIPELINE_COSMOS2_T2V_2B_720P.recipe_name,
+    runner_name=PIPELINE_COSMOS2_T2V_2B_720P.name,
     description="Cosmos-Predict2 2B T2V at 720p (single AR step, prompt-only).",
     pipeline=PIPELINE_COSMOS2_T2V_2B_720P,
 )
 
 
 PIPELINE_COSMOS2_I2V_2B_720P = CosmosInferencePipelineConfig(
-    recipe_name="cosmos2-i2v-2b-720p",
+    name="cosmos2-i2v-2b-720p",
     enable_sync_and_profile=True,
     encoder=None,
     decoder=WanVAEDecoderConfig(),
@@ -101,7 +101,7 @@ PIPELINE_COSMOS2_I2V_2B_720P = CosmosInferencePipelineConfig(
     image_encoder=WanVAEEncoderConfig(),
 )
 RUNNER_COSMOS2_I2V_2B_720P = Cosmos2I2VRunnerConfig(
-    runner_name=PIPELINE_COSMOS2_I2V_2B_720P.recipe_name,
+    runner_name=PIPELINE_COSMOS2_I2V_2B_720P.name,
     description="Cosmos-Predict2 2B I2V at 720p (single AR step, prompt + first-frame image).",
     pipeline=PIPELINE_COSMOS2_I2V_2B_720P,
 )

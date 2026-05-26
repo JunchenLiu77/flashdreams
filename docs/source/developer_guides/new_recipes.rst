@@ -47,7 +47,7 @@ An integration has two layers:
       Defines user-facing I/O. It turns CLI fields such as prompt, image path,
       input video, output directory, and runtime toggles into pipeline calls.
 
-The code still uses ``recipe_name`` for the stable pipeline slug, but the
+The code still uses ``name`` for the stable pipeline slug, but the
 authoring model to follow is **pipeline + runner**.
 
 .. raw:: html
@@ -128,7 +128,7 @@ Compose a :class:`~flashdreams.infra.pipeline.StreamInferencePipelineConfig`
 literal from transformer, scheduler, optional encoder, and optional decoder
 configs.
 
-- Give every variant a stable ``recipe_name``. Treat it like a route, not a
+- Give every variant a stable ``name``. Treat it like a route, not a
   local variable.
 - Use :func:`~flashdreams.infra.config.derive_config` to create variants from a
   base config instead of copy-pasting full nested literals.
@@ -155,7 +155,7 @@ Runner configs
 
 In ``config.py``, create one runner config literal per shipped variant. Set a
 clear ``description`` because it appears in ``flashdreams-run --help``. By
-convention, ``runner_name`` mirrors the wrapped pipeline's ``recipe_name``.
+convention, ``runner_name`` mirrors the wrapped pipeline's ``name``.
 
 Also expose a module-level dict keyed by ``runner_name`` for programmatic use:
 

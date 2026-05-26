@@ -47,7 +47,7 @@ class RunnerConfig(InstantiateConfig):
 
     runner_name: str
     """Registry key and ``flashdreams-run`` subcommand name. By convention
-    mirrors the wrapped pipeline's ``recipe_name`` slug."""
+    mirrors the wrapped pipeline's ``name`` slug."""
 
     description: Annotated[str, tyro.conf.Suppress] = ""
     """One-line subcommand description shown next to the slug in

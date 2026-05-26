@@ -39,7 +39,7 @@ These config objects are modular and nestable. A typical pipeline config defines
 
    # Compose them into a pipeline config
    pipeline_config = StreamInferencePipelineConfig(
-       recipe_name="customized-method-name",
+       name="customized-method-name",
        encoder=MyStreamingEncoderConfig(),
        diffusion_model=DiffusionModelConfig(
            transformer=MyTransformerConfig(),
