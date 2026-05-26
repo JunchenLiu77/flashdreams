@@ -13,7 +13,7 @@ lifecycle as the other integrations (`omnidreams`, `lingbot_world`, `wan2_1`)
 applies.
 
 This is a worked example of the
-[Adding a new integration](../../docs/source/developer_guides/new_integration.rst)
+[Adding a new method](https://verbose-adventure-7plnn5m.pages.github.io/main/developer_guides/new_integration.html)
 developer-guide flow.
 
 ## Shipped slugs
