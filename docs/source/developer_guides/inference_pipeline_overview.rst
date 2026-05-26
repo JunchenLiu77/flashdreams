@@ -16,7 +16,7 @@
 Inference Pipeline Overview
 ===================================
 
-This page outlines the major computation flow in the FlashDreams inference pipeline. 
+This page outlines the major computation flow in the FlashDreams inference pipeline.
 It should help you understand the core concepts and APIs for building your own model integration,
 or modifying existing ones.
 
@@ -26,10 +26,10 @@ or modifying existing ones.
    :alt: FlashDreams autoregressive inference pipeline overview.
 
 The key entry point class for the inference pipeline is
-:class:`~flashdreams.infra.pipeline.StreamInferencePipeline`, which defines the 
+:class:`~flashdreams.infra.pipeline.StreamInferencePipeline`, which defines the
 autoregressive generation loop shown in the figure. The persistent state is held in
-:class:`~flashdreams.infra.pipeline.StreamInferencePipelineCache` as a cache object, 
-which is passed around and updated in each autoregressive step. 
+:class:`~flashdreams.infra.pipeline.StreamInferencePipelineCache` as a cache object,
+which is passed around and updated in each autoregressive step.
 
 .. code-block:: python
 
@@ -54,14 +54,14 @@ which is passed around and updated in each autoregressive step.
        pipeline.finalize(autoregressive_index, cache)
 
 The code snippet above shows the basic loop. At the top level, you first call :meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.initialize_cache`
-once with global conditions, such as text prompts and the first frame. Then, for each autoregressive step, call 
-:meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.generate` to produce the current output chunk, 
-followed by :meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.finalize`. This split exists because 
-:meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.finalize` typically handles additional KV 
-cache updates that are not in the hot path. This allows them to be offloaded to a background thread in many 
+once with global conditions, such as text prompts and the first frame. Then, for each autoregressive step, call
+:meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.generate` to produce the current output chunk,
+followed by :meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.finalize`. This split exists because
+:meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.finalize` typically handles additional KV
+cache updates that are not in the hot path. This allows them to be offloaded to a background thread in many
 cases to hide latency.
 
-Inside :meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.generate`, the pipeline encodes the 
+Inside :meth:`~flashdreams.infra.pipeline.StreamInferencePipeline.generate`, the pipeline encodes the
 per-step control input, runs the diffusion model's denoising loop, and decodes the latent chunk into
 the final output. The following snippet illustrates this internal flow:
 
@@ -97,7 +97,7 @@ the final output. The following snippet illustrates this internal flow:
            cache=cache.decoder_cache,
        )
 
-In FlashDreams, these components are wired together using a configuration system. This allows you to build 
+In FlashDreams, these components are wired together using a configuration system. This allows you to build
 a customized pipeline by supplying different configurations for the encoder, diffusion model, and decoder.
 A typical :class:`~flashdreams.infra.pipeline.StreamInferencePipelineConfig` is instantiated as follows:
 
@@ -142,5 +142,5 @@ Here is how existing models use this structure:
 - `Wan2.1 config <https://github.com/NVIDIA/flashdreams/blob/main/integrations/wan21/wan21/config.py>`_:
   Treats a bidirectional video model as a single-rollout autoregressive model.
 
-For the detailed API documentation, check out :doc:`/api/infra`. If you are interested in implementing a new model, 
+For the detailed API documentation, check out :doc:`/api/infra`. If you are interested in implementing a new model,
 please refer to :doc:`/developer_guides/new_integration`.

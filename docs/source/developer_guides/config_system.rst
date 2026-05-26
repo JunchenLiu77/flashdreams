@@ -16,7 +16,7 @@
 Config system
 ===================================
 
-FlashDreams configuration is built around simple, strongly-typed Python ``dataclass`` objects. 
+FlashDreams configuration is built around simple, strongly-typed Python ``dataclass`` objects.
 This configuration system is similar to the one employed in `nerfstudio <https://github.com/nerfstudio-project/nerfstudio>`_. It allows you to easily plug in different permutations of model components and nest configurations to define the complete inference pipeline.
 
 Base components
@@ -67,14 +67,14 @@ Let's say you want to create a new encoder called ``MyEncoder``. You can create 
 
        # Point to the class that will be instantiated by this config
        _target: Type = field(default_factory=lambda: MyEncoder)
-       
+
        # Expose your configurable parameters
        embedding_dim: int = 512
        num_layers: int = 6
 
    class MyEncoder(Encoder):
        """My custom encoder model.
-       
+
        Args:
            config: Configuration to instantiate the encoder.
        """
@@ -86,7 +86,7 @@ Let's say you want to create a new encoder called ``MyEncoder``. You can create 
            super().__init__(config)
            # Build your layers using self.config.embedding_dim, etc.
            ...
-           
+
        def forward(self, input):
            ...
 
@@ -96,7 +96,7 @@ Alternatively, you do not always have to write a complete configuration from scr
 
    from flashdreams.infra.config import derive_config
    from my_project.configs import MyBasePipelineConfig
-   
+
    # Create a variant that inherits everything from MyBasePipelineConfig
    # but overrides the encoder's embedding dimension.
    my_variant_config = derive_config(
@@ -107,7 +107,7 @@ Alternatively, you do not always have to write a complete configuration from scr
 Modifying from CLI
 ------------------
 
-Often times, you just want to play with the parameters of an existing model without having to specify a new one. You can easily do so via the CLI, which is powered by `tyro <https://github.com/brentyi/tyro>`_. 
+Often times, you just want to play with the parameters of an existing model without having to specify a new one. You can easily do so via the CLI, which is powered by `tyro <https://github.com/brentyi/tyro>`_.
 
 Because our configurations are strongly typed dataclasses, ``tyro`` automatically generates a comprehensive command-line interface. You can use the ``flashdreams-run`` (The CLI carried in FlashDreams) command to dynamically override any nested dataclass field.
 

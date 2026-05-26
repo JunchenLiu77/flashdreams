@@ -18,7 +18,9 @@ content = content.replace("maintain your integration", "maintain your method")
 content = content.replace("your new integration", "your new method")
 
 # "an integration typically defines" -> "a method typically defines"
-content = content.replace("an integration typically defines", "a method typically defines")
+content = content.replace(
+    "an integration typically defines", "a method typically defines"
+)
 
 # "my integration" -> "my method"
 content = content.replace("my integration", "my method")
@@ -30,7 +32,9 @@ content = content.replace("register the integration", "register the method")
 content = content.replace("developing a new integration", "developing a new method")
 
 # "documenting your new integration" -> "documenting your new method"
-content = content.replace("documenting your new integration", "documenting your new method")
+content = content.replace(
+    "documenting your new integration", "documenting your new method"
+)
 
 with open(filepath, "w") as f:
     f.write(content)
