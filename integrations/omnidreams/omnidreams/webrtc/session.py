@@ -35,7 +35,6 @@ from omnidreams.conditioning.renderer import load_and_attach_ludus_scene
 from omnidreams.conditioning.world_scenario.data_loaders import load_scene
 from omnidreams.conditioning.world_scenario.settings import SETTINGS
 from omnidreams.config import OMNIDREAMS_CONFIGS
-from omnidreams.hf import omni_dreams_hf_repo, omni_dreams_hf_url
 from omnidreams.transformer import CosmosTransformerConfig
 
 from flashdreams.core.distributed.rank_orchestration import (
@@ -59,11 +58,9 @@ _T = TypeVar("_T")
 DEFAULT_CLIENT_LIVENESS_TIMEOUT_S = 10.0
 _CLIENT_LIVENESS_CHECK_INTERVAL_S = 1.0
 DEFAULT_WEBRTC_SCENE_UUID = "065dcac9-ee67-4434-a835-c6b816c88e48"
-WEBRTC_SCENES_HF_REPO = omni_dreams_hf_repo("omni-dreams-scenes")
-WEBRTC_SCENES_HF_BROWSER_URL = omni_dreams_hf_url(
-    "omni-dreams-scenes",
-    "tree/main/scenes",
-    repo_type="dataset",
+WEBRTC_SCENES_HF_REPO = "nvidia/omni-dreams-scenes"
+WEBRTC_SCENES_HF_BROWSER_URL = (
+    "https://huggingface.co/datasets/nvidia/omni-dreams-scenes/tree/main/scenes"
 )
 WEBRTC_SCENE_IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 FLASHDREAMS_CACHE_DIR = Path(

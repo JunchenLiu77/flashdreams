@@ -30,7 +30,6 @@ from typing import cast
 from omnidreams.encoder.pixel_shuffle import (
     PixelShuffleVAEEncoderConfig,
 )
-from omnidreams.hf import omni_dreams_hf_url
 from omnidreams.pipeline import (
     OmnidreamsPipelineConfig,
 )
@@ -77,9 +76,9 @@ _INTERNAL_OMNIDREAMS_CHECKPOINT_PATHS: dict[str, str] = {
 # Unmirrored slugs fall through to s3 so integration configs still import; mirror
 # new slugs here as they land on HF.
 _PUBLIC_OMNIDREAMS_CHECKPOINT_PATHS: dict[str, str] = {
-    "1view-vae-chunk2": omni_dreams_hf_url(
-        "omni-dreams-models",
-        "resolve/main/single_view/2b_res720p_30fps_i2v_hdmap_distilled.pt",
+    "1view-vae-chunk2": (
+        "https://huggingface.co/nvidia/omni-dreams-models/resolve/main/"
+        "single_view/2b_res720p_30fps_i2v_hdmap_distilled.pt"
     ),
 }
 
