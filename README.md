@@ -3,13 +3,16 @@ SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 -->
 
-<p align="center">
+<!-- <p align="center">
   <img src="assets/logo/flashdreams-logo-horizontal.png" alt="FlashDreams" width="600">
-</p>
+</p> -->
+
+FlashDreams
+-----------
 
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
-  <a href="https://github.com/NVIDIA/flashdreams/issues"><img alt="Issues" src="https://img.shields.io/github/issues/NVIDIA/flashdreams"></a>
+  <a href="https://verbose-adventure-7plnn5m.pages.github.io/main/index.html"><img alt="Documentation" src="https://img.shields.io/badge/docs-latest-blue.svg"></a>
 </p>
 
 **FlashDreams** is a high-performance inference and serving library for
@@ -27,26 +30,11 @@ environments, and more.
        width="720">
 </p>
 
-## Why FlashDreams
-
-- **Low latency** — keep the interaction responsive when controls, sensors,
-  or user input change.
-- **High throughput** — keep the GPU busy across autoregressive steps and
-  multi-GPU execution.
-- **Steady streaming generation** — stream frames or chunks at a steady pace
-  while the session stays alive.
-- **World-state evolution** — carry rolling state forward so the generated
-  world evolves across steps.
-- **Production-oriented serving** — a serving backend for persistent,
-  low-latency world-model sessions with multi-GPU support and streaming I/O.
-
-The full design rationale lives in the
-[documentation overview](docs/source/index.rst).
 
 ## Quickstart
 
 The complete setup is in
-[`docs/source/quickstart/installation.rst`](docs/source/quickstart/installation.rst).
+[the installation guide](https://verbose-adventure-7plnn5m.pages.github.io/main/quickstart/installation.html).
 The shortest viable path is:
 
 ```bash
@@ -58,7 +46,7 @@ uv run flashdreams-run --help
 ```
 
 Then launch your first model by following
-[`docs/source/quickstart/first_world_model.rst`](docs/source/quickstart/first_world_model.rst).
+[the quickstart guide](https://verbose-adventure-7plnn5m.pages.github.io/main/quickstart/first_world_model.html).
 For example, the offline Self-Forcing T2V quickstart command is:
 
 ```bash
@@ -79,32 +67,26 @@ FlashDreams ships first-party integrations under
 [`integrations/`](integrations/). Each model has a dedicated docs page with
 runner slugs, multi-GPU commands, and (where available) profiling benchmarks.
 
-| Model | Family | Docs |
-| --- | --- | --- |
-| [Self-Forcing](docs/source/models/self_forcing.rst) | Streaming Wan2.1 T2V | Ready |
-| [OmniDreams](docs/source/models/omnidreams.rst) | HDMap-conditioned driving world model | Ready |
-| [LingBot-World](docs/source/models/lingbot_world.rst) | Camera-controllable I2V world model | Ready |
-| [Wan2.1](docs/source/models/wan21.rst) | Bidirectional T2V / I2V reference | Ready |
-| [Causal-Forcing](docs/source/models/causal_forcing.rst) | Streaming Wan2.1 T2V / I2V | Docs coming soon |
-| [Causal Wan2.2](docs/source/models/causal_wan22.rst) | FastVideo CausalWan 2.2 14B MoE T2V | Docs coming soon |
-| [FlashVSR](docs/source/models/flashvsr.rst) | Streaming video super-resolution | Docs coming soon |
-| [Cosmos-Predict2.5](docs/source/models/cosmos_predict2.rst) | Bidirectional T2V / I2V | Docs coming soon |
+| Model | Family |
+| --- | --- |
+| [Self-Forcing](https://verbose-adventure-7plnn5m.pages.github.io/main/models/self_forcing.html) | Streaming Wan2.1 T2V |
+| [OmniDreams](https://verbose-adventure-7plnn5m.pages.github.io/main/models/omnidreams.html) | HDMap-conditioned driving world model |
+| [LingBot-World](https://verbose-adventure-7plnn5m.pages.github.io/main/models/lingbot_world.html) | Camera-controllable I2V world model |
+| [Wan2.1](https://verbose-adventure-7plnn5m.pages.github.io/main/models/wan21.html) | Bidirectional T2V / I2V |
+| [Causal-Forcing](https://verbose-adventure-7plnn5m.pages.github.io/main/models/causal_forcing.html) | Streaming Wan2.1 T2V / I2V |
+| [Causal Wan2.2](https://verbose-adventure-7plnn5m.pages.github.io/main/models/causal_wan22.html) | FastVideo Causal Wan 2.2 14B MoE T2V |
+| [FlashVSR](https://verbose-adventure-7plnn5m.pages.github.io/main/models/flashvsr.html) | Streaming video super-resolution |
+| [Cosmos-Predict2.5](https://verbose-adventure-7plnn5m.pages.github.io/main/models/cosmos_predict2.html) | Bidirectional T2V / I2V |
 
-See [`docs/source/models/index.rst`](docs/source/models/index.rst) for the
-model gallery and [`docs/source/developer_guides/new_integration.rst`](docs/source/developer_guides/new_integration.rst)
+See [the model gallery](https://verbose-adventure-7plnn5m.pages.github.io/main/models/index.html) and
+[the new method guide](https://verbose-adventure-7plnn5m.pages.github.io/main/developer_guides/new_integration.html)
 to add your own.
 
 ## Developer guides
 
-For internals and extension points, start with:
-
-- [Inference pipeline overview](docs/source/developer_guides/inference_pipeline_overview.rst)
-  — generation loop, transformer / encoder / decoder contracts,
-  AR caches, CP, CFG, KV cache, CUDA-graph wrapping.
-- [Config system](docs/source/developer_guides/config_system.rst)
-  — pipeline and runner configuration, overrides, presets.
-- [Add a new method](docs/source/developer_guides/new_integration.rst)
-  — register a new model integration end to end.
+- [Inference pipeline overview](https://verbose-adventure-7plnn5m.pages.github.io/main/developer_guides/inference_pipeline_overview.html)
+- [Config system](https://verbose-adventure-7plnn5m.pages.github.io/main/developer_guides/config_system.html)
+- [Add a new method](https://verbose-adventure-7plnn5m.pages.github.io/main/developer_guides/new_integration.html)
 
 For day-to-day development:
 
@@ -113,8 +95,7 @@ uv run pre-commit run -a
 uv run pytest -m "not manual"
 ```
 
-See [`DEV.md`](DEV.md) for repository-specific workflow notes and
-[`PERFORMANCE.md`](PERFORMANCE.md) for performance methodology.
+See [`DEV.md`](DEV.md) for repository-specific workflow notes.
 
 ## Contributing
 

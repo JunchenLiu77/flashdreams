@@ -4,7 +4,7 @@ Causal-Forcing chunkwise / framewise streaming T2V + I2V inference for Wan 2.1 1
 packaged as a [`flashdreams`](../..) plugin, in a standalone repo.
 
 This is a worked example of the
-[Add a new method](../../docs/source/developer_guides/new_integration.rst)
+[Add a new method](https://verbose-adventure-7plnn5m.pages.github.io/main/developer_guides/new_integration.html)
 developer-guide flow.
 
 ## Shipped slugs
