@@ -53,7 +53,7 @@ Add optional files only when you need to customize the behavior beyond what we c
    @dataclass(kw_only=True)
    class CustomizedMethodRunnerConfig(RunnerConfig):
        """Runner config for my method."""
-       _target: type = field(default_factory=lambda: CustomizedMethodRunner)
+       _target: type["CustomizedMethodRunner"] = field(default_factory=lambda: CustomizedMethodRunner)
        prompt: str = "A cat surfing."
        total_blocks: int = 60
 

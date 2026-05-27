@@ -58,7 +58,6 @@ Let's say you want to create a new encoder called ``MyEncoder``. You can create 
 .. code-block:: python
 
    from dataclasses import dataclass, field
-   from typing import Type
    from flashdreams.infra.encoder.base import EncoderConfig, Encoder
 
    @dataclass(kw_only=True)
@@ -66,7 +65,7 @@ Let's say you want to create a new encoder called ``MyEncoder``. You can create 
        """My custom encoder config."""
 
        # Point to the class that will be instantiated by this config
-       _target: Type = field(default_factory=lambda: MyEncoder)
+       _target: type["MyEncoder"] = field(default_factory=lambda: MyEncoder)
 
        # Expose your configurable parameters
        embedding_dim: int = 512
