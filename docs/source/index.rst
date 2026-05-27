@@ -30,12 +30,11 @@ Overview
 --------------------
 
 FlashDreams is a *high-performance inference and serving library for
-interactive autoregressive video and world models*. It began as the optimized
-runtime behind
-the `OmniDreams closed-loop demo for GTC 2026
-<https://research.nvidia.com/labs/sil/projects/omnidreams-blog/>`_, and has
-since grown into a general platform for real-time world-model applications across
-gaming, autonomous vehicles, robotics, simulated or virtual environments, and more.
+interactive autoregressive video and world models*. It is a general platform
+for real-time world-model applications across gaming, autonomous vehicles,
+robotics, simulated or virtual environments, and more, and is the
+runtime backbone of the `OmniDreams closed-loop demo at
+GTC 2026 <https://research.nvidia.com/labs/sil/projects/omnidreams-blog/>`_.
 
 .. TODO: Add the FlashDreams teaser video here once the final asset is ready.
 .. .. raw:: html
@@ -47,14 +46,14 @@ gaming, autonomous vehicles, robotics, simulated or virtual environments, and mo
 
 .. raw:: html
 
-   <p class="fd-subtitle">Why interactive world-model serving matters.</p>
+   <p class="fd-subtitle">Interactive world models</p>
 
 A world model learns to generate and evolve an environment over time. In
 practice this often means video, but the same concept can include actions,
 state, audio, sensor input, and control signals.
 
 World-model serving is the runtime pattern for putting that model inside a live
-application. Instead of producing one static clip, the system keeps a session
+application. Instead of producing one static video, the system keeps a session
 alive while input, model state, GPU inference, and output evolve together. This
 is useful for interactive simulation, robotics, autonomy, healthcare workflows,
 creative tools, virtual worlds, and game-like experiences.
@@ -65,7 +64,7 @@ creative tools, virtual worlds, and game-like experiences.
    :alt: Offline one-shot video inference compared with online autoregressive world-model serving.
 
 In a served world-model application, the key requirement is not only generating
-a high-quality clip. The runtime must keep an interactive session responsive
+a high-quality video. The runtime must keep an interactive session responsive
 while the model continues to advance the world.
 
 .. raw:: html
@@ -123,7 +122,7 @@ while the model continues to advance the world.
 
 .. raw:: html
 
-   <p class="fd-subtitle">Best-in-class inference speed.</p>
+   <p class="fd-subtitle">Best-in-class inference speed</p>
 
 FlashDreams is engineered with efficiency in mind. With a bottom-up system
 design tailored to autoregressive world-model inference patterns, it delivers best-in-class
@@ -160,11 +159,12 @@ speed across many popular open-source models and GPU architectures.
 
 Although FlashDreams is designed for autoregressive inference, the same
 optimization stack applies naturally to bidirectional inference (e.g.,
-Wan2.1) by treating it as a single-rollout autoregressive pass.
+:doc:`Wan2.1 </models/wan21>`) by treating it as a single-rollout
+autoregressive pass.
 
 .. raw:: html
 
-   <p class="fd-subtitle">Production-oriented interactive serving backend.</p>
+   <p class="fd-subtitle">Production-oriented interactive serving backend</p>
 
 FlashDreams also includes a production-oriented serving backend for persistent,
 low-latency world-model sessions, with efficient inference execution, multi-GPU support, and
@@ -187,7 +187,7 @@ streaming input/output. Explore the interactive demos powered by FlashDreams:
      </a>
    </div>
 
-Start Here
+Start here
 ----------
 
 .. raw:: html

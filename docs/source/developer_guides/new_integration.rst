@@ -13,7 +13,7 @@
 .. See the License for the specific language governing permissions and
 .. limitations under the License.
 
-Add a New Method
+Add a new method
 ===================================
 
 Before you start adding a new method, we highly recommend reading the :doc:`/developer_guides/inference_pipeline_overview` and :doc:`/developer_guides/config_system` pages first to get a big picture of the system architecture.
@@ -22,7 +22,7 @@ FlashDreams aims to offer researchers a codebase that they can utilize to extend
 
 However, if any of your new features require modifications to the core FlashDreams infra or introduce generally useful components (such as the :mod:`TAEHV decoder <flashdreams.recipes.taehv>`), we encourage you to submit a PR to enable others to benefit from them.
 
-File Structure
+File structure
 --------------
 
 We recommend the following file structure for your new method:
