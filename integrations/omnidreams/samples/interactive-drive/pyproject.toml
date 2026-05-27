@@ -7,10 +7,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "omnidreams-interactive-drive"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Single-process driving demo for the omnidreams world model, with a slangpy/Ludus front end."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26",
   "Pillow>=10.0",

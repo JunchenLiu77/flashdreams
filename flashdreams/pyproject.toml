@@ -23,7 +23,7 @@ dynamic = ["version"]
 description = "High-performance streaming video diffusion framework with pluggable model backends"
 readme = "PYPI_README.md"
 license = "Apache-2.0"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.10"
 dependencies = [
     "boto3>=1.35",
     "botocore>=1.35",
@@ -76,6 +76,7 @@ dev = [
     "pytest>=8.0",
     "mediapy>=1.1",
     "pytest-manual-marker",
+    "tomli>=2.0",
     # Transformer Engine is the parity / perf reference for the
     # in-house RoPE Triton kernel (see ``tests/test_rope_kernel.py``
     # and ``tests/perf_rope.py``). No runtime code imports it; gate
