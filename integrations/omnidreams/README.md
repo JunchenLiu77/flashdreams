@@ -42,8 +42,8 @@ switches checkpoint and example-data URLs back to `s3://flashdreams`.
 
 - [`samples/interactive-drive/`](samples/interactive-drive/README.md) — a
   single-process driving demo with a Ludus OpenGL raster backend and a
-  PyTorch world-model backend. Run with `uv run --package omnidreams-interactive-drive
-  --extra ui --extra world-model interactive-drive ...` from the
+  PyTorch world-model backend. Run with `uv run --package
+  omnidreams-interactive-drive interactive-drive ...` from the
   flashdreams workspace root.
 
 ## Run WebRTC server

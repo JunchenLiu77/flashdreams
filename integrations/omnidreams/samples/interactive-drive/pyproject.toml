@@ -85,6 +85,16 @@ addopts = "-m 'not xvfb' --capture=sys"
 markers = [
   "gpu: test requires an NVIDIA GPU / CUDA driver (select with '-m gpu', skip with '-m \"not gpu\"')",
   "xvfb: test uses pyvirtualdisplay/Xvfb (deselected by default; run with '-m xvfb' or clear with '-m \"\"')",
+  # Workspace-wide CI tier markers. The sample's ``tests/conftest.py``
+  # ``pytest_collection_modifyitems`` hook auto-assigns one of these to
+  # every test based on the sample-local ``gpu`` / ``xvfb`` markers,
+  # so root ``pytest -m ci_cpu`` / ``pytest -m ci_gpu`` picks the
+  # right subset and the workspace's ``marker_enforcement`` plugin
+  # doesn't reject sample tests. Registering them here so
+  # ``strict_markers`` doesn't complain when the conftest adds them.
+  "ci_cpu: CPU-safe test, runs on the CPU CI runner",
+  "ci_gpu: requires GPU or libGL (cv2), runs on the GPU CI runner",
+  "manual: heavy or environment-specific test, opt-in only",
 ]
 
 [tool.ruff]

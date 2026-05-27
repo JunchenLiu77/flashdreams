@@ -82,24 +82,44 @@ def _load_prompt(zf: zipfile.ZipFile, variant: str, prompt_override: str | None)
     return prompts.get(variant, prompts.get("default", ""))
 
 
+def variant_from_stem(stem: str, prefix: str) -> str | None:
+    """Canonical scene-variant name parser.
+
+    Maps a file *stem* (no extension) to the variant slug used by
+    ``--variant`` / the HUD's variant selector. The convention, matching
+    what ``nvidia/omni-dreams-scenes`` ships:
+
+    * ``<prefix>``           -> ``"default"``  (e.g. ``prompt.txt``, ``first_image.png``)
+    * ``<prefix>_<X>``       -> ``<X>``        (e.g. ``prompt_1.txt`` -> ``"1"``)
+    * anything else          -> ``None``       (rejected; caller skips it)
+
+    The trailing-suffix-without-underscore form (``prompt1.txt``,
+    ``first_image1.png``) is **rejected** so the HUD's selector and the
+    scene-loader's prompt dict agree on the variant key. Previously a
+    naive ``stem.replace(prefix, "")`` quietly mapped ``prompt_1`` to
+    ``_1`` while the HUD displayed ``1``, so the selector silently fell
+    back to the default prompt on real scenes.
+
+    All three discovery paths (``_discover_prompts``,
+    ``_discover_first_images`` here, the HUD's ``_discover_variants`` in
+    ``demo.py``, and ``scene_bundle._discover_prompts`` /
+    ``_discover_first_frames`` for unpacked scene directories) share
+    this helper to stay in lock-step.
+    """
+    if stem == prefix:
+        return "default"
+    if stem.startswith(prefix + "_"):
+        return stem[len(prefix) + 1 :]
+    return None
+
+
 def _discover_prompts(zf: zipfile.ZipFile) -> dict[str, str]:
-    # Match the underscore-handling convention used by
-    # ``_discover_first_images`` (and the HUD's ``_variant_from_stem``):
-    # ``prompt.txt`` is the ``default`` variant; ``prompt_<X>.txt`` is
-    # variant ``<X>``; anything else (e.g. ``promptX.txt`` with no
-    # underscore) is ignored. The previous ``str.replace("prompt", "")``
-    # mis-stored ``prompt_1.txt`` as ``_1`` instead of ``1``, so the HUD's
-    # variant selector silently fell back to the default prompt.
     prompts: dict[str, str] = {}
     for name in zf.namelist():
         if "/" in name or not name.startswith("prompt") or not name.endswith(".txt"):
             continue
-        stem = Path(name).stem
-        if stem == "prompt":
-            variant = "default"
-        elif stem.startswith("prompt_"):
-            variant = stem.replace("prompt_", "", 1)
-        else:
+        variant = variant_from_stem(Path(name).stem, "prompt")
+        if variant is None:
             continue
         prompts[variant] = zf.read(name).decode("utf-8").strip()
     if "default" not in prompts and prompts:
@@ -113,12 +133,8 @@ def _discover_first_images(zf: zipfile.ZipFile) -> dict[str, str]:
     for name in zf.namelist():
         if "/" in name or not name.startswith("first_image") or not name.endswith(".png"):
             continue
-        stem = Path(name).stem
-        if stem == "first_image":
-            variant = "default"
-        elif stem.startswith("first_image_"):
-            variant = stem.replace("first_image_", "", 1)
-        else:
+        variant = variant_from_stem(Path(name).stem, "first_image")
+        if variant is None:
             continue
         images[variant] = name
     if "default" not in images and images:

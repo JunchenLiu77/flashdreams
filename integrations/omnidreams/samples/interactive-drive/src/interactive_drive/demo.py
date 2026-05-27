@@ -10,9 +10,7 @@ import io
 import math
 import os
 import select
-import shutil
 import struct
-import subprocess
 import threading
 import time
 import zipfile
@@ -25,6 +23,7 @@ import yaml
 from PIL import Image
 
 from interactive_drive import cli as _cli
+from interactive_drive import scene_loader as _scene_loader
 from interactive_drive.app import InteractiveDriveApp
 from interactive_drive.config import BevConfig, RasterConfig
 
@@ -520,11 +519,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--cuda-visible-devices",
         default="auto",
         help=(
-            "CUDA_VISIBLE_DEVICES for the backend. ``auto`` (default) keeps any"
-            " existing env value, otherwise picks ``1`` when nvidia-smi reports"
-            " at least 2 GPUs (so the GB300 wins on the RTX6000+GB300 dev box)"
-            " and leaves it unset on single-GPU machines. Empty string forces"
-            " unset; a literal value (e.g. ``0``) is passed through verbatim."
+            "CUDA_VISIBLE_DEVICES for the backend. ``auto`` (default) leaves"
+            " whatever the user already exported untouched; a literal value"
+            " (e.g. ``0`` or ``1``) is passed through verbatim; empty string"
+            " forces the env var unset. The HUD does not auto-pick a GPU --"
+            " set CUDA_VISIBLE_DEVICES (or pass an explicit value) on"
+            " multi-GPU hosts where the default-zero pick is wrong."
         ),
     )
     parser.add_argument("--wheel-profile", default="auto")
@@ -590,7 +590,7 @@ def _maybe_autostage_scene(scene: Path) -> Path:
         raise SystemExit(
             f"Scene '{scene.name}' is not staged yet and HF_TOKEN is not set.\n"
             "Either export HF_TOKEN to enable auto-staging on launch, or run:\n"
-            f"  uv run --package interactive-drive interactive-drive-prepare --scene-uuid {stem}"
+            f"  uv run --package omnidreams-interactive-drive interactive-drive-prepare --scene-uuid {stem}"
         )
     print(
         f"[interactive-drive] Scene '{stem}' not found locally; "
@@ -760,54 +760,23 @@ def _run_slangpy_hud(args: argparse.Namespace) -> None:
 def _apply_cuda_visible_devices_inplace(requested: str) -> None:
     """Resolve ``--cuda-visible-devices`` into the in-process ``os.environ``.
 
-    The supervised path mutated a copy of ``os.environ`` and passed it
-    to ``subprocess.Popen``; in-process we mutate ``os.environ`` directly
-    so torch / CUDA see the right device list before any backend
-    construction. MUST run before ``_cli.run`` (which is what pulls in
-    flashdreams / WorldModelRenderBackend / torch.cuda).
+    In-process we mutate ``os.environ`` directly so torch / CUDA see the
+    right device list before any backend construction. MUST run before
+    ``_cli.run`` (which is what pulls in flashdreams /
+    WorldModelRenderBackend / torch.cuda).
 
-    ``auto`` checks whether the user already exported
-    ``CUDA_VISIBLE_DEVICES`` and otherwise counts GPUs via
-    ``nvidia-smi -L``. With >= 2 GPUs we keep the original dual-GPU
-    default of ``1`` (so the GB300 backs the world model on the
-    RTX6000+GB300 dev box); on single-GPU machines we leave the env
-    unset so the rasterizer's hard ``torch.cuda.is_available()`` check
-    passes.
+    ``auto`` is a no-op (leave whatever the user already exported alone).
+    Earlier versions of this helper auto-picked GPU ``1`` on any
+    multi-GPU host -- that assumed the RTX6000 + GB300 dev box layout
+    and silently picked the wrong GPU on other multi-GPU machines.
+    Users on hosts where the default-zero pick is wrong should export
+    ``CUDA_VISIBLE_DEVICES`` themselves or pass an explicit value.
     """
     if requested == "":
         os.environ.pop("CUDA_VISIBLE_DEVICES", None)
         return
     if requested != "auto":
         os.environ["CUDA_VISIBLE_DEVICES"] = requested
-        return
-    if "CUDA_VISIBLE_DEVICES" in os.environ:
-        return
-    gpu_count = _count_visible_gpus()
-    if gpu_count >= 2:
-        os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
-
-def _count_visible_gpus() -> int:
-    """Return how many CUDA GPUs ``nvidia-smi -L`` reports, or 0 on failure.
-
-    We avoid importing torch in the supervisor process (it would defeat the
-    point of running the heavy CUDA bring-up in the backend subprocess), so
-    shelling out to ``nvidia-smi`` is the lightest way to learn the GPU count.
-    """
-    if shutil.which("nvidia-smi") is None:
-        return 0
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "-L"],
-            capture_output=True,
-            text=True,
-            timeout=5.0,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return 0
-    if result.returncode != 0:
-        return 0
-    return sum(1 for line in result.stdout.splitlines() if line.strip().startswith("GPU "))
 
 
 def _resolve_demo_paths(args: argparse.Namespace) -> None:
@@ -871,13 +840,17 @@ def _discover_variants(scene_path: Path) -> tuple[str, ...]:
             for name in zf.namelist():
                 if "/" in name:
                     continue
+                stem = Path(name).stem
                 if name.startswith("first_image") and name.endswith(".png"):
-                    variants.add(_variant_from_stem(Path(name).stem, "first_image"))
+                    variant = _scene_loader.variant_from_stem(stem, "first_image")
                 elif name.startswith("prompt") and name.endswith(".txt"):
-                    variants.add(_variant_from_stem(Path(name).stem, "prompt"))
+                    variant = _scene_loader.variant_from_stem(stem, "prompt")
+                else:
+                    continue
+                if variant is not None:
+                    variants.add(variant)
     except (OSError, zipfile.BadZipFile):
         return ("default",)
-    variants.discard("")
     if not variants:
         variants.add("default")
     if "default" not in variants:
@@ -909,13 +882,13 @@ def _make_thumbnail(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return thumb
 
 
-def _variant_from_stem(stem: str, prefix: str) -> str:
-    if stem == prefix:
-        return "default"
-    if stem.startswith(prefix + "_"):
-        return stem.replace(prefix + "_", "", 1)
-    suffix = stem.replace(prefix, "", 1)
-    return suffix or "default"
+# ``_variant_from_stem`` removed in favour of the shared
+# :func:`scene_loader.variant_from_stem` -- all three discovery paths
+# (USDZ archives, unpacked scene dirs, HUD variant selector) now agree
+# on the underscore-required convention. The previous fallback that
+# accepted ``prompt1.txt`` as variant ``1`` was inconsistent with
+# ``_discover_first_images`` and silently masked the
+# ``prompt_<N>.txt`` -> ``_<N>`` bug on real scenes.
 
 
 def _variant_label(variant: str) -> str:

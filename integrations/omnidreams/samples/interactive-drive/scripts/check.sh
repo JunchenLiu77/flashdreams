@@ -25,7 +25,7 @@ WORKSPACE_ROOT="$(cd "$SAMPLE_ROOT/../../../.." && pwd)"
 
 cd "$SAMPLE_ROOT"
 
-UV_RUN=(uv --project "$WORKSPACE_ROOT" run --package omnidreams-interactive-drive --extra dev --extra ui --extra world-model)
+UV_RUN=(uv --project "$WORKSPACE_ROOT" run --package omnidreams-interactive-drive --extra dev)
 
 if [[ "${1:-}" == "--fix" ]]; then
   "${UV_RUN[@]}" ruff check --fix .
