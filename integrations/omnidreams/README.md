@@ -46,12 +46,12 @@ backend ([see its README](omnidreams/interactive_drive/README.md) for the
 full guide). From the flashdreams workspace root:
 
 ```bash
-uv sync --package flashdreams-omnidreams --extra desktop
+uv sync --package flashdreams-omnidreams --extra interactive-drive
 uv run --package flashdreams-omnidreams interactive-drive
 ```
 
-The `desktop` extra adds `slangpy` (the Vulkan-backed local windowing
-runtime); server users running only `omnidreams.webrtc` or
+The `interactive-drive` extra adds `slangpy` (the Vulkan-backed local
+windowing runtime); server users running only `omnidreams.webrtc` or
 `omnidreams.grpc` can skip it. The default scene auto-stages from
 `nvidia/omni-dreams-scenes` on first launch when `HF_TOKEN` is set; use
 `interactive-drive-prepare` for explicit staging of arbitrary scene UUIDs

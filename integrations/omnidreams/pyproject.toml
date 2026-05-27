@@ -58,10 +58,13 @@ flashdreams = { workspace = true }
 ludus-renderer = { workspace = true }
 
 [project.optional-dependencies]
-# Slangpy + Vulkan runtime, only needed by ``omnidreams.interactive_drive``.
-# Server users (``omnidreams.webrtc`` / ``omnidreams.grpc``) don't need this
-# and shouldn't pay the slangpy install cost in their containers.
-desktop = [
+# Slangpy + Vulkan runtime, only needed by the ``interactive-drive``
+# desktop demo (``omnidreams.interactive_drive``). Server users
+# (``omnidreams.webrtc`` / ``omnidreams.grpc``) don't need this and
+# shouldn't pay the slangpy install cost in their containers. Named
+# after the consumer (the ``interactive-drive`` script) rather than
+# the abstract capability so the install command is self-documenting.
+interactive-drive = [
     "slangpy==0.41.0",
 ]
 dev = [
@@ -74,8 +77,8 @@ dev = [
 
 [project.scripts]
 # Desktop interactive-drive demo entry points. Both require the
-# ``desktop`` extra to be installed (it adds slangpy); without it the
-# presenter import fails fast with a clear message.
+# ``interactive-drive`` extra to be installed (it adds slangpy); without
+# it the presenter import fails fast with a clear message.
 interactive-drive = "omnidreams.interactive_drive.demo:main"
 interactive-drive-prepare = "omnidreams.interactive_drive.prepare:main"
 

@@ -142,12 +142,12 @@ Vulkan-backed local windowing runtime) on top of the base
 `omnidreams.grpc`) skip it.
 
 ```bash
-uv sync --package flashdreams-omnidreams --extra desktop
+uv sync --package flashdreams-omnidreams --extra interactive-drive
 uv run --package flashdreams-omnidreams interactive-drive-prepare \
   --scene-uuid clipgt-01d503d4-449b-46fc-8d78-9085e70d3554
 ```
 
-`uv sync --extra desktop` installs the full demo runtime (slangpy + Ludus
+`uv sync --extra interactive-drive` installs the full demo runtime (slangpy + Ludus
 front end, flashdreams + flashdreams-omnidreams pipeline).
 `interactive-drive-prepare` stages the requested scene USDZ from the
 resolved scenes dataset
@@ -341,7 +341,7 @@ Run the subpackage's test suite (CPU subset) from the flashdreams workspace
 root:
 
 ```bash
-uv sync --package flashdreams-omnidreams --extra desktop --extra dev
+uv sync --package flashdreams-omnidreams --extra interactive-drive --extra dev
 uv run --no-sync --package flashdreams-omnidreams pytest \
   integrations/omnidreams/tests/interactive_drive -m "not gpu and not xvfb"
 ```
