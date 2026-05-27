@@ -67,18 +67,6 @@ name = "block-sparse-attn"
 version = "0.0.2"
 requires-dist = ["torch", "einops"]
 
-# The `transformer-engine-torch==2.14.0` sdist on PyPI is missing its
-# `build_tools/` directory, so any from-source build (which is the only option
-# since there is no prebuilt wheel) crashes inside setup.py with
-# `ModuleNotFoundError: No module named 'build_tools'`. Tracked upstream in
-# https://github.com/NVIDIA/TransformerEngine/issues/1567 — fixed after 2.14.0.
-# Override the source to build from the v2.14.1 git tag, whose tree includes
-# `build_tools/`. Inside the prebuilt flashdreams container TE is already
-# installed system-wide, so this override is only exercised on host-side
-# `uv sync` runs.
-[tool.uv.sources]
-transformer-engine-torch = { git = "https://github.com/NVIDIA/TransformerEngine.git", tag = "v2.14.1", subdirectory = "transformer_engine/pytorch" }
-
 [tool.pyright]
 extraPaths = [
     "flashdreams",
@@ -103,7 +91,7 @@ reportIncompatibleMethodOverride = "none"
 reportIncompatibleVariableOverride = "none"
 
 [tool.ty.environment]
-python-version = "3.12"
+python-version = "3.10"
 extra-paths = [
     "flashdreams",
     "integrations/omnidreams",
