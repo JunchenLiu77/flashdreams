@@ -844,9 +844,13 @@ def build_synthetic_scene_usdz(
             json.dumps(_rig_trajectory_doc(poses, timestamps_us.tolist())),
         )
         zf.writestr("mesh_ground.ply", _synthetic_ground_mesh_ply())
+        # Match the naming convention used by the real HF scenes (and by
+        # ``first_image_<N>.png`` above): underscore-separated variant
+        # numbers. Without the underscore, ``_discover_prompts`` rejects
+        # the file and the variant selector silently falls back to default.
         zf.writestr("prompt.txt", default_prompt)
-        zf.writestr("prompt1.txt", variant1_prompt)
-        zf.writestr("prompt2.txt", variant2_prompt)
+        zf.writestr("prompt_1.txt", variant1_prompt)
+        zf.writestr("prompt_2.txt", variant2_prompt)
 
         _write_png_entry(zf, "first_image.png", base_rgb)
         _write_png_entry(zf, "first_image_1.png", variant1_rgb)

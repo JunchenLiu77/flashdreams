@@ -226,8 +226,7 @@ process.
 ### HUD mode (default)
 
 ```bash
-uv run --package omnidreams-interactive-drive interactive-drive \
-  --wheel-profile auto
+uv run --package omnidreams-interactive-drive interactive-drive
 ```
 
 The default `--scene` and `--manifest` resolve to the bundled
@@ -241,14 +240,19 @@ backend so the GB300 hosts CUDA inference; on a single-GPU box it leaves the
 env unset so the lone GPU is visible. Pass `--cuda-visible-devices 0` to pin a
 specific GPU, or `--cuda-visible-devices ""` to forcibly clear the env.
 
-Wheel profiles live in `configs/wheels/`; `auto` scans stable
-`/dev/input/by-id` symlinks first, then `/dev/input/event*`, and matches the
-detected device name against each YAML profile. If auto-detect ever picks the
-wrong device, pass `--wheel-profile thrustmaster` or
-`--wheel-device /dev/input/eventX`. The HUD also subscribes to the backend's
-`/bev_stream` and shows a top-down BEV minimap below the steering and pedal
-controls; pass `--no-bev` to skip the extra rasterizer dispatch when you don't
-need it.
+The HUD also subscribes to the backend's `/bev_stream` and shows a top-down
+BEV minimap below the steering and pedal controls; pass `--no-bev` to skip
+the extra rasterizer dispatch when you don't need it.
+
+**Steering wheel support.** Drop a profile YAML (axis map, FFB settings,
+device-name match patterns) into `configs/wheels/` and the HUD will pick it
+up at startup. With `--wheel-profile auto` (the default), the HUD scans
+`/dev/input/by-id` first, then `/dev/input/event*`, and matches the
+detected device name against each profile's `detection_patterns`. To name a
+specific profile use `--wheel-profile <name>` (matching the YAML filename);
+to bind a known device path directly use `--wheel-device /dev/input/eventX`;
+to disable wheel input entirely use `--no-wheel`. No profiles ship with the
+repo — keyboard-only driving works fine without one.
 
 ### `--no-hud`: bare backend, local Vulkan window
 

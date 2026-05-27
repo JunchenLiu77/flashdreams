@@ -83,12 +83,24 @@ def _load_prompt(zf: zipfile.ZipFile, variant: str, prompt_override: str | None)
 
 
 def _discover_prompts(zf: zipfile.ZipFile) -> dict[str, str]:
+    # Match the underscore-handling convention used by
+    # ``_discover_first_images`` (and the HUD's ``_variant_from_stem``):
+    # ``prompt.txt`` is the ``default`` variant; ``prompt_<X>.txt`` is
+    # variant ``<X>``; anything else (e.g. ``promptX.txt`` with no
+    # underscore) is ignored. The previous ``str.replace("prompt", "")``
+    # mis-stored ``prompt_1.txt`` as ``_1`` instead of ``1``, so the HUD's
+    # variant selector silently fell back to the default prompt.
     prompts: dict[str, str] = {}
     for name in zf.namelist():
         if "/" in name or not name.startswith("prompt") or not name.endswith(".txt"):
             continue
-        suffix = Path(name).stem.replace("prompt", "")
-        variant = suffix or "default"
+        stem = Path(name).stem
+        if stem == "prompt":
+            variant = "default"
+        elif stem.startswith("prompt_"):
+            variant = stem.replace("prompt_", "", 1)
+        else:
+            continue
         prompts[variant] = zf.read(name).decode("utf-8").strip()
     if "default" not in prompts and prompts:
         first_key = sorted(prompts.keys())[0]

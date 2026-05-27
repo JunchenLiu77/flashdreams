@@ -16,8 +16,6 @@ env/
 venv/
 
 .vscode/
-!.vscode/
-!.vscode/launch.json
 .idea/
 .DS_Store
 .ipynb_checkpoints/

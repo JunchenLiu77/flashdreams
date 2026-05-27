@@ -144,6 +144,14 @@ norecursedirs = [
     "parity_check",
     "baseline_fastvideo",
     "baseline_lightx2v",
+    # The interactive-drive sample carries its own pytest config (with
+    # ``gpu``/``xvfb`` markers instead of the workspace-wide
+    # ``ci_cpu``/``ci_gpu``/``manual`` tiers) and is exercised via the
+    # sample's own ``scripts/check.sh`` / ``uv run --package
+    # omnidreams-interactive-drive pytest``. Skipping it here prevents the
+    # workspace-wide marker_enforcement hook from rejecting every sample
+    # test at collection time.
+    "integrations/omnidreams/samples/interactive-drive/tests",
 ]
 markers = [
     "ci_cpu: CPU-safe test, runs on the CPU CI runner",
